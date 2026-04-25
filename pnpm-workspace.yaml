@@ -1,0 +1,5 @@
+packages:
+  - "agent"
+  - "cli"
+  - "control-plane"
+  - "packages/*"

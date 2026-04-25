@@ -1,0 +1,9 @@
+.git
+.azure
+node_modules
+**/node_modules
+**/dist
+try-output
+.env
+.env.*
+.DS_Store

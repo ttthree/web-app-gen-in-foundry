@@ -1,0 +1,7 @@
+# Placeholder Foundry hosted-agent definition.
+# Live deployment values are intentionally left to the environment because
+# hosted session APIs and agent schema are preview and encapsulated behind
+# FoundrySessionsClient in this scaffold.
+name: web-app-gen-agent
+protocol: responses
+artifactPath: output/app.zip
