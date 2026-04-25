@@ -48,8 +48,13 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       }
       if (await handleCommand(command, { session, preview, config })) break;
       if (!command.startsWith("/")) {
-        await runTurn(foundry, session, preview, command, { openBrowser: options.openBrowser !== false && !browserOpened });
-        browserOpened = true;
+        try {
+          await runTurn(foundry, session, preview, command, { openBrowser: options.openBrowser !== false && !browserOpened });
+          browserOpened = true;
+        } catch (error) {
+          console.error(`✗ ${error instanceof Error ? error.message : String(error)}`);
+          console.log("You can retry by sending the same prompt again.");
+        }
       }
       rl.prompt();
     }
@@ -78,10 +83,34 @@ export async function runTurn(
   prompt: string,
   options: { openBrowser?: boolean } = {},
 ): Promise<void> {
-  console.log("⏳ Generating...");
   const githubToken = await getFreshGitHubToken();
-  const response = await foundry.createResponse({ agentName: session.agentName, sessionId: session.sessionId, prompt, githubToken });
+  const response = await foundry.createResponseStreaming({
+    agentName: session.agentName,
+    sessionId: session.sessionId,
+    prompt,
+    githubToken,
+    onProgress: (event) => {
+      switch (event.type) {
+        case "intent":
+          process.stdout.write(`\r🤔 ${event.message}                    \n`);
+          break;
+        case "tool_start":
+          process.stdout.write(`\r🔧 ${event.message}...`);
+          break;
+        case "tool_complete":
+          process.stdout.write(` ✓\n`);
+          break;
+        case "status":
+          process.stdout.write(`\r⏳ ${event.message}                    \n`);
+          break;
+        case "error":
+          process.stdout.write(`\r✗ ${event.message}                    \n`);
+          break;
+      }
+    },
+  });
   if (response.status !== "completed") throw new Error(response.outputText ?? `Generation did not complete: ${response.status}`);
+  process.stdout.write("\r⬇ Downloading app...                    \n");
   const zip = await foundry.downloadSessionFile({ agentName: session.agentName, sessionId: session.sessionId, path: "output/app.zip" });
   const result = await preview.updateFromZip(zip);
   const bytes = result.files.reduce((sum, file) => sum + file.contents.byteLength, 0);

@@ -77,7 +77,18 @@ async function runGenerate(prompt: string, flags: { endpoint?: string; agentName
   const foundry = new FoundryRestClient(config);
   const session = await foundry.createSession({ agentName: config.agentName, isolationKey: `github:${identity.id}` });
   console.log(`Session: ${session.sessionId}`);
-  const response = await foundry.createResponse({ agentName: session.agentName, sessionId: session.sessionId, prompt, githubToken });
+  const response = await foundry.createResponseStreaming({
+    agentName: session.agentName,
+    sessionId: session.sessionId,
+    prompt,
+    githubToken,
+    onProgress: (event) => {
+      if (event.type === "intent") console.log(`🤔 ${event.message}`);
+      else if (event.type === "tool_start") process.stdout.write(`🔧 ${event.message}...`);
+      else if (event.type === "tool_complete") process.stdout.write(" ✓\n");
+      else if (event.type === "status") console.log(`⏳ ${event.message}`);
+    },
+  });
   if (response.status !== "completed") throw new Error(response.outputText ?? `Generation did not complete: ${response.status}`);
   const { zipPath, bytes } = await downloadAndValidateAppZip({ foundry, session, outDir: "./output" });
   console.log(`✓ Valid app.zip downloaded to ${zipPath} (${bytes.length} bytes)`);

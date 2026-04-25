@@ -10,9 +10,16 @@ export type FoundrySessionFile = {
   isDirectory: boolean;
 };
 
+export type FoundryProgressEvent = {
+  type: "intent" | "tool_start" | "tool_complete" | "status" | "error";
+  message: string;
+  toolName?: string;
+};
+
 export interface FoundrySessionsClient {
   createSession(input: { agentName: string; isolationKey: string }): Promise<FoundrySessionRef>;
   createResponse(input: { agentName: string; sessionId: string; prompt: string; githubToken: string }): Promise<{ responseId: string; status: string; outputText?: string }>;
+  createResponseStreaming(input: { agentName: string; sessionId: string; prompt: string; githubToken: string; onProgress: (event: FoundryProgressEvent) => void }): Promise<{ responseId: string; status: string; outputText?: string }>;
   downloadSessionFile(input: { agentName: string; sessionId: string; path: string }): Promise<Uint8Array>;
   listSessionFiles(input: { agentName: string; sessionId: string; path?: string }): Promise<FoundrySessionFile[]>;
 }
@@ -42,6 +49,11 @@ export class InMemoryFoundrySessionsClient implements FoundrySessionsClient {
     if (!input.prompt.trim()) return { responseId: "", status: "failed" };
     if (!input.githubToken.trim()) return { responseId: "", status: "failed", outputText: "missing GitHub token" };
     return { responseId: `response-${input.sessionId}`, status: "completed", outputText: "Generated static app at output/app.zip" };
+  }
+
+  async createResponseStreaming(input: { agentName: string; sessionId: string; prompt: string; githubToken: string; onProgress: (event: FoundryProgressEvent) => void }): Promise<{ responseId: string; status: string; outputText?: string }> {
+    input.onProgress({ type: "status", message: "Generating..." });
+    return this.createResponse(input);
   }
 
   async downloadSessionFile(input: { agentName: string; sessionId: string; path: string }): Promise<Uint8Array> {

@@ -1,7 +1,14 @@
 import { CopilotClient } from "@github/copilot-sdk";
+import type { SessionEvent } from "@github/copilot-sdk";
 import { createGuardedPermissionHandler } from "./permission-guard.js";
 
 export const WEB_APP_BUILDER_AGENT_NAME = "web-app-builder-agent";
+
+export type ProgressEvent = {
+  type: "intent" | "tool_start" | "tool_complete" | "status" | "error";
+  message: string;
+  toolName?: string;
+};
 
 export type CopilotRunnerInput = {
   gitHubToken: string;
@@ -9,6 +16,10 @@ export type CopilotRunnerInput = {
   prompt: string;
   skillsDirectory?: string;
   timeoutMs?: number;
+};
+
+export type CopilotStreamingInput = CopilotRunnerInput & {
+  onEvent: (event: ProgressEvent) => void;
 };
 
 export function buildCopilotClientOptions() {
@@ -51,6 +62,41 @@ export async function runCopilotWebAppGeneration(input: CopilotRunnerInput): Pro
     }
   } finally {
     await client.stop();
+  }
+}
+
+export async function runCopilotWebAppGenerationStreaming(input: CopilotStreamingInput): Promise<void> {
+  const client = new CopilotClient(buildCopilotClientOptions());
+  await client.start();
+
+  try {
+    const session = await client.createSession(buildCopilotSessionConfig(input));
+    try {
+      session.on((event: SessionEvent) => {
+        const progress = mapEventToProgress(event);
+        if (progress) input.onEvent(progress);
+      });
+      await session.sendAndWait({ prompt: buildGenerationPrompt(input.prompt) }, input.timeoutMs ?? 10 * 60 * 1000);
+    } finally {
+      await session.disconnect();
+    }
+  } finally {
+    await client.stop();
+  }
+}
+
+function mapEventToProgress(event: SessionEvent): ProgressEvent | null {
+  switch (event.type) {
+    case "assistant.intent":
+      return { type: "intent", message: event.data.intent };
+    case "tool.execution_start":
+      return { type: "tool_start", message: `Running ${event.data.toolName}`, toolName: event.data.toolName };
+    case "tool.execution_complete":
+      return { type: "tool_complete", message: `Done: ${event.data.toolCallId}`, toolName: event.data.toolCallId };
+    case "session.error":
+      return { type: "error", message: event.data.message };
+    default:
+      return null;
   }
 }
 

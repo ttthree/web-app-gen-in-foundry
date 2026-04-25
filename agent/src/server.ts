@@ -2,13 +2,13 @@ import { createReadStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
-import { buildGenerationPrompt, runCopilotWebAppGeneration } from "./copilot-runner.js";
+import { buildGenerationPrompt, runCopilotWebAppGeneration, runCopilotWebAppGenerationStreaming } from "./copilot-runner.js";
 import { validateZipBuffer } from "@web-app-gen/contracts";
 import { ensureValidAppZip } from "./package-output.js";
 
 const DEFAULT_PORT = 8088;
 
-export { buildGenerationPrompt, runCopilotWebAppGeneration } from "./copilot-runner.js";
+export { buildGenerationPrompt, runCopilotWebAppGeneration, runCopilotWebAppGenerationStreaming } from "./copilot-runner.js";
 
 export function startServer(options: { port?: number; workspacePath?: string } = {}) {
   const port = options.port ?? Number(process.env.PORT ?? DEFAULT_PORT);
@@ -52,6 +52,7 @@ export function startServer(options: { port?: number; workspacePath?: string } =
 async function handleResponses(request: IncomingMessage, response: ServerResponse, workspacePath: string): Promise<void> {
   const body = await readJson(request);
   const prompt = extractPrompt(body);
+  const stream = extractStream(body);
   if (!prompt) {
     sendJson(response, 400, { error: "missing_prompt" });
     return;
@@ -67,9 +68,57 @@ async function handleResponses(request: IncomingMessage, response: ServerRespons
     return;
   }
 
+  if (stream) {
+    await handleStreamingResponse(response, workspacePath, token, prompt);
+  } else {
+    await handleNonStreamingResponse(response, workspacePath, token, prompt);
+  }
+}
+
+async function handleStreamingResponse(response: ServerResponse, workspacePath: string, token: string, prompt: string): Promise<void> {
+  response.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+
+  const sendEvent = (event: string, data: unknown) => {
+    response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendEvent("progress", { type: "status", message: "Starting generation..." });
+
+  try {
+    await runCopilotWebAppGenerationStreaming({
+      gitHubToken: token,
+      workingDirectory: workspacePath,
+      prompt,
+      onEvent: (event) => {
+        sendEvent("progress", event);
+      },
+    });
+
+    sendEvent("progress", { type: "status", message: "Packaging output..." });
+    await ensureValidAppZip({ workspacePath, prompt });
+
+    sendEvent("done", {
+      id: `resp_${Date.now()}`,
+      status: "completed",
+      output_text: "Generated static app at output/app.zip",
+    });
+  } catch (error) {
+    sendEvent("error", {
+      status: "failed",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    response.end();
+  }
+}
+
+async function handleNonStreamingResponse(response: ServerResponse, workspacePath: string, token: string, prompt: string): Promise<void> {
   await runCopilotWebAppGeneration({ gitHubToken: token, workingDirectory: workspacePath, prompt });
 
-  // Package output/app/ files into a valid ZIP (Copilot can't create binary ZIPs)
   try {
     await ensureValidAppZip({ workspacePath, prompt });
   } catch (error) {
@@ -150,6 +199,11 @@ function extractPrompt(value: unknown): string {
     }
   }
   return "";
+}
+
+function extractStream(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  return (value as Record<string, unknown>).stream === true;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {

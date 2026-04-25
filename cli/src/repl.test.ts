@@ -148,6 +148,11 @@ function fakeFoundry(): FoundrySessionsClient & { requests: Array<{ prompt: stri
       requests.push({ prompt: input.prompt, githubToken: input.githubToken, sessionId: input.sessionId });
       return { responseId: "resp", status: "completed" };
     },
+    async createResponseStreaming(input) {
+      requests.push({ prompt: input.prompt, githubToken: input.githubToken, sessionId: input.sessionId });
+      input.onProgress({ type: "status", message: "Generating..." });
+      return { responseId: "resp", status: "completed" };
+    },
     async downloadSessionFile() {
       return createStoredZip([{ path: "index.html", contents: "<h1>ok</h1>" }]);
     },

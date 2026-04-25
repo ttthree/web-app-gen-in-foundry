@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import type { FoundrySessionRef, FoundrySessionsClient, FoundrySessionFile } from "@web-app-gen/contracts";
+import type { FoundrySessionRef, FoundrySessionsClient, FoundrySessionFile, FoundryProgressEvent } from "@web-app-gen/contracts";
 
 export type FoundryClientOptions = {
   endpoint: string;
@@ -56,6 +56,96 @@ export class FoundryRestClient implements FoundrySessionsClient {
     return { responseId: response.id ?? "", status: response.status ?? "unknown", outputText: response.output_text };
   }
 
+  async createResponseStreaming(input: { agentName: string; sessionId: string; prompt: string; githubToken: string; onProgress: (event: FoundryProgressEvent) => void }): Promise<{ responseId: string; status: string; outputText?: string }> {
+    const token = await this.azureTokenProvider();
+    const url = this.url(this.agentPath(input.agentName, "endpoint/protocols/openai/responses"));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
+    try {
+      const response = await this.fetchImpl(url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "Foundry-Features": "HostedAgents=V1Preview",
+        },
+        body: JSON.stringify({
+          input: input.prompt,
+          stream: true,
+          agent_session_id: input.sessionId,
+          github_token: input.githubToken,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const error = await readFoundryError(response);
+        throw formatFoundryError(response.status, error.message);
+      }
+
+      const contentType = response.headers.get("content-type") ?? "";
+
+      if (contentType.includes("text/event-stream") && response.body) {
+        return await this.consumeSSE(response.body, input.onProgress);
+      }
+
+      // Fallback: server responded with JSON (non-streaming)
+      const json = (await response.json()) as { id?: string; status?: string; output_text?: string };
+      if (json.status === "failed") throw new Error(json.output_text ?? "Foundry response failed");
+      return { responseId: json.id ?? "", status: json.status ?? "unknown", outputText: json.output_text };
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw new Error("Generation timed out. Try a simpler request.");
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async consumeSSE(body: ReadableStream<Uint8Array>, onProgress: (event: FoundryProgressEvent) => void): Promise<{ responseId: string; status: string; outputText?: string }> {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let currentEvent = "";
+    let result: { responseId: string; status: string; outputText?: string } = { responseId: "", status: "unknown" };
+
+    const reader = body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            try {
+              const parsed = JSON.parse(data);
+              if (currentEvent === "progress") {
+                onProgress(parsed as FoundryProgressEvent);
+              } else if (currentEvent === "done") {
+                result = { responseId: parsed.id ?? "", status: parsed.status ?? "completed", outputText: parsed.output_text };
+              } else if (currentEvent === "error") {
+                throw new Error(parsed.message ?? "Generation failed");
+              }
+            } catch (parseError) {
+              if (parseError instanceof SyntaxError) continue; // skip malformed JSON
+              throw parseError;
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return result;
+  }
+
   async downloadSessionFile(input: { agentName: string; sessionId: string; path: string }): Promise<Uint8Array> {
     const url = this.url(this.agentPath(input.agentName, `endpoint/sessions/${encodeURIComponent(input.sessionId)}/files/content`), {
       path: input.path,
@@ -82,11 +172,24 @@ export class FoundryRestClient implements FoundrySessionsClient {
   }
 
   private async request(method: string, pathOrUrl: string, options: { headers?: Record<string, string>; body?: unknown; timeoutMs?: number } = {}): Promise<Response> {
-    for (let attempt = 0; attempt <= 3; attempt += 1) {
-      const response = await this.requestOnce(method, pathOrUrl, options);
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
+      let response: Response;
+      try {
+        response = await this.requestOnce(method, pathOrUrl, options);
+      } catch (error) {
+        // Network-level failures (fetch failed, ECONNRESET, etc.) — retry with backoff
+        if (attempt < maxAttempts) {
+          const delay = 5000 * (attempt + 1);
+          console.error(`⚠ Network error (attempt ${attempt + 1}/${maxAttempts + 1}): ${describeError(error)}. Retrying in ${delay / 1000}s...`);
+          await this.sleep(delay);
+          continue;
+        }
+        throw error;
+      }
       if (response.ok) return response;
       const error = await readFoundryError(response);
-      if (response.status === 424 && error.code === "session_not_ready" && attempt < 3) {
+      if (response.status === 424 && error.code === "session_not_ready" && attempt < maxAttempts) {
         await this.sleep(5000);
         continue;
       }
@@ -113,7 +216,7 @@ export class FoundryRestClient implements FoundrySessionsClient {
       });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") throw new Error("Generation timed out. Try a simpler request.");
-      throw error;
+      throw new Error(`Network error: ${describeError(error)}`);
     } finally {
       clearTimeout(timeout);
     }
@@ -146,6 +249,13 @@ async function readFoundryError(response: Response): Promise<{ code?: string; me
 function formatFoundryError(status: number, message: string): Error {
   if (status === 401 || status === 403) return new Error(`Azure credentials expired. Run: az login (${message})`);
   return new Error(`Foundry API error ${status}: ${message}`);
+}
+
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) return `${error.message} (${cause.message})`;
+  return error.message;
 }
 
 function exec(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
