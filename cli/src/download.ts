@@ -12,7 +12,7 @@ export type DownloadAppZipInput = {
 
 export async function downloadAndValidateAppZip(input: DownloadAppZipInput): Promise<{ zipPath: string; bytes: Uint8Array }> {
   const sessionFilePath = input.sessionFilePath ?? "output/app.zip";
-  const bytes = await input.foundry.downloadSessionFile({ session: input.session, path: sessionFilePath });
+  const bytes = await input.foundry.downloadSessionFile({ agentName: input.session.agentName, sessionId: input.session.sessionId, path: sessionFilePath });
   const validation = validateZipBuffer(bytes);
   if (!validation.ok) {
     throw new Error(`Downloaded app ZIP failed validation: ${validation.errors.join("; ")}`);

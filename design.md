@@ -139,16 +139,9 @@ type FoundrySessionRef = {
   agentName: string;
 };
 
-interface FoundrySessionsClient {
-  createOrResumeSession(input: { productUserId: string; isolationKey: string }): Promise<FoundrySessionRef>;
-  createResponse(input: { session: FoundrySessionRef; prompt: string }): Promise<{ responseId: string; status: string }>;
-  downloadSessionFile(input: { session: FoundrySessionRef; path: string }): Promise<Uint8Array>;
-}
-
-interface GitHubTokenBroker {
-  getUserAccessToken(input: { productUserId: string }): Promise<{ accessToken: string; expiresAt?: string }>;
-  refreshIfNeeded(input: { productUserId: string }): Promise<void>;
-}
+// See "Contracts Update" section below for the current FoundrySessionsClient interface.
+// The CLI calls Foundry REST APIs directly; the control-plane GitHubTokenBroker
+// is replaced by per-request `gh auth token` in the CLI.
 ```
 
 Live implementations will use the current Foundry hosted session Responses and session file APIs. Tests use in-memory mocks with the same interface.
@@ -254,7 +247,315 @@ The permission handler must:
 - Do not include tokens in model prompts, generated files, session file outputs, logs, or error payloads.
 - CI uses a dedicated test product user that authorizes the same GitHub App and has a Copilot entitlement.
 
-## Artifact Contract
+## CLI REPL and Direct Foundry API
+
+### Motivation
+
+The CLI must call Foundry REST APIs directly instead of wrapping `azd ai agent invoke` (a dev/debug tool). This enables:
+- Per-request GitHub token passing (tokens expire, can't bake into env vars)
+- User session isolation via Foundry isolation keys
+- Multi-turn REPL chat with live preview
+
+### CLI Architecture
+
+```text
+CLI REPL
+  ├─ gh auth token → fresh GitHub token (per request)
+  ├─ GET https://api.github.com/user → derive isolation key (github:<id>)
+  ├─ az account get-access-token → Azure AD Bearer token for Foundry API
+  ├─ POST /agents/{name}/endpoint/sessions → create isolated session
+  ├─ POST /agents/{name}/endpoint/protocols/openai/responses → multi-turn chat
+  ├─ GET /agents/{name}/endpoint/sessions/{sid}/files/content → download output
+  └─ Local preview server (localhost) with auto-refresh
+```
+
+### Foundry REST API Contract
+
+```text
+BASE = https://{account}.services.ai.azure.com/api/projects/{project}
+API_VERSION = v1
+Headers: Foundry-Features: HostedAgents=V1Preview
+Auth: Bearer <azure-ad-token> (resource: https://ai.azure.com)
+
+# Create session
+POST {BASE}/agents/{name}/endpoint/sessions?api-version={API_VERSION}
+Header: x-session-isolation-key: github:<id>
+Body: {}
+Response: { "agent_session_id": "...", "status": "..." }
+
+# Invoke via Responses API
+POST {BASE}/agents/{name}/endpoint/protocols/openai/responses?api-version={API_VERSION}
+Body: { "input": "...", "stream": false, "agent_session_id": "<session-id>", "github_token": "<token>" }
+Response: { "id": "resp_...", "output": [...], "output_text": "...", "status": "completed" }
+
+# List session files
+GET {BASE}/agents/{name}/endpoint/sessions/{sid}/files?api-version={API_VERSION}&path=output
+Response: { "entries": [{ "name": "app.zip", "size": 1234, "is_dir": false }, ...] }
+
+# Download session file
+GET {BASE}/agents/{name}/endpoint/sessions/{sid}/files/content?api-version={API_VERSION}&path=output/app.zip
+Response: binary file content
+```
+
+### Per-Request GitHub Token
+
+The agent server accepts `github_token` in the Responses request body alongside `input`:
+
+```ts
+// POST /responses body
+{
+  "input": "build a calculator",
+  "agent_session_id": "abc123",
+  "github_token": "gho_xxxx"   // per-request, fresh token
+}
+```
+
+The agent server reads `github_token` from the request body first, falls back to `COPILOT_GITHUB_TOKEN` env var. This keeps backward compatibility with Foundry portal invocations while enabling per-request tokens from the CLI.
+
+**Token freshness policy:** The CLI calls `gh auth token` **before each `POST /responses`** call, not once per session. This ensures the token is always fresh even in long REPL sessions. The agent server must never log, persist, or include the token in error payloads.
+
+Agent server token precedence (in `server.ts`):
+1. `body.github_token` (from request body)
+2. `process.env.COPILOT_GITHUB_TOKEN`
+3. `process.env.GITHUB_TOKEN`
+4. `process.env.GH_TOKEN`
+5. If none → return 401 `missing_copilot_auth`
+
+### Session Isolation
+
+Each CLI user gets isolated sessions via Foundry isolation keys:
+
+1. CLI calls `GET https://api.github.com/user` with the GitHub token
+2. Uses the GitHub `user.id` (numeric, stable) as isolation key, prefixed: `github:<id>`
+3. Creates Foundry session with `x-session-isolation-key: github:<id>`
+4. All subsequent requests use the same `agent_session_id`
+5. Different users get different sandboxes — can't see each other's sessions/files
+
+### CLI Configuration
+
+The CLI reads configuration from the following sources (in order of precedence):
+
+1. **CLI flags** (e.g., `--endpoint`, `--agent-name`, `--port`)
+2. **Environment variables:**
+   - `AZURE_AI_PROJECT_ENDPOINT` — full project endpoint URL (e.g., `https://foundry-test-jie-ncu.services.ai.azure.com/api/projects/proj-default`)
+   - `WEB_APP_GEN_AGENT_NAME` — agent name (default: `web-app-gen-in-foundry`)
+   - `WEB_APP_GEN_PREVIEW_PORT` — local preview server port (default: `3001`)
+   - `FOUNDRY_API_VERSION` — API version (default: `v1`)
+3. **azd environment** — if env vars are not set, CLI runs `azd env get-values` to read `AZURE_AI_PROJECT_ENDPOINT` from the azd environment
+
+The CLI derives `{account}` and `{project}` by parsing the endpoint URL:
+```
+https://{account}.services.ai.azure.com/api/projects/{project}
+→ account = foundry-test-jie-ncu, project = proj-default
+```
+
+### CLI Prerequisites
+
+The CLI requires:
+- `gh` — GitHub CLI, authenticated (`gh auth login`)
+- `az` — Azure CLI, authenticated (`az login`)
+- The user must have `Azure AI User` role on the Foundry project
+- The user's GitHub account must have a Copilot entitlement
+
+On startup, the CLI validates each prerequisite and prints actionable errors:
+```
+✗ GitHub CLI not found. Install: https://cli.github.com
+✗ Not logged in to Azure. Run: az login
+✗ AZURE_AI_PROJECT_ENDPOINT not set. Run: azd env get-values or set the env var.
+```
+
+### Multi-Turn Behavior
+
+Each REPL turn creates a **new Copilot SDK session** on the agent server, but reuses the **same Foundry hosted session** (same `agent_session_id`). This means:
+
+- **Workspace files persist** across turns — the Foundry session sandbox filesystem is stateful
+- **Copilot SDK context does NOT persist** — each turn starts fresh, but Copilot can read/modify files left by previous turns
+- The generation prompt tells Copilot: "Modify the existing app in output/app/ based on the user request. If no app exists yet, create one from scratch."
+- Multi-turn works because Copilot reads the existing `output/app/` files, understands the current app state, and makes incremental changes
+
+Updated generation prompt for multi-turn:
+```text
+Use the web-app-builder skill to generate or update a frontend-only static web app.
+
+Rules:
+- Read existing files in output/app/ if present — modify them to fulfill the user request.
+- If no files exist yet, create a new app from scratch.
+- Write all app files under output/app.
+- The app must run by opening index.html directly in a browser.
+- Do not create output/app.zip — the server will package the files.
+- Do not create a backend, server process, database, auth provider, or cloud dependency.
+- Do not include tokens, secrets, or user auth data in generated files.
+
+User request:
+{userRequest}
+```
+
+### ZIP Repackaging on Every Turn
+
+`agent/src/package-output.ts:ensureValidAppZip()` must **always repackage** on each `/responses` call, not skip when a valid ZIP exists. Delete any existing `output/app.zip` before repackaging to ensure the downloaded ZIP reflects the latest files.
+
+### Contracts Update
+
+Update `packages/contracts/src/foundry.ts` to model the new API surface:
+
+```ts
+interface FoundrySessionsClient {
+  createSession(input: {
+    agentName: string;
+    isolationKey: string;
+  }): Promise<{ sessionId: string; status: string }>;
+
+  createResponse(input: {
+    agentName: string;
+    sessionId: string;
+    prompt: string;
+    githubToken: string;
+  }): Promise<{
+    responseId: string;
+    status: string;
+    outputText: string;
+    error?: { code: string; message: string };
+  }>;
+
+  downloadSessionFile(input: {
+    agentName: string;
+    sessionId: string;
+    path: string;
+  }): Promise<Uint8Array>;
+
+  listSessionFiles(input: {
+    agentName: string;
+    sessionId: string;
+    path: string;
+  }): Promise<Array<{ name: string; size: number; isDir: boolean }>>;
+}
+```
+
+### Preview Server Details
+
+- **Port**: defaults to 3001, configurable via `--port` or `WEB_APP_GEN_PREVIEW_PORT`
+- **Port conflict**: if port is busy, try ports 3002-3010, then fail with error
+- **Browser open**: uses `open` (macOS), `xdg-open` (Linux), `start` (Windows) via `child_process.exec`
+- **MIME types**: serve `.html` as `text/html`, `.css` as `text/css`, `.js` as `application/javascript`, `.json` as `application/json`, `.svg` as `image/svg+xml`, `.png` as `image/png`, others as `application/octet-stream`
+- **Auto-refresh injection**: inject the polling script before `</body>` if present, or append to end of HTML response if `</body>` not found
+- **Cache headers**: `Cache-Control: no-store` on all responses to prevent stale previews
+- **ZIP extraction**: use new `extractStoredZip()` from contracts (see below). Extract to a fixed temp directory (`os.tmpdir()/web-app-gen-preview/`), overwriting on each turn. Before extracting, delete all existing files in the temp dir to avoid stale files from previous turns.
+
+### ZIP Content Extraction
+
+Add `extractStoredZip()` to `packages/contracts/src/artifact.ts`:
+
+```ts
+export type ExtractedFile = {
+  path: string;
+  contents: Uint8Array;
+};
+
+export function extractStoredZip(zip: Uint8Array): ExtractedFile[] {
+  // Read local file headers (0x04034b50) sequentially.
+  // For stored entries (compression method 0), file data immediately follows the
+  // local header (30 bytes) + filename + extra field.
+  // Returns all non-directory entries with their raw content.
+  // Throws on compressed entries (method != 0), since we only create stored ZIPs.
+  // Validates: safe relative paths (reuse isSafeRelativePath), no path traversal.
+}
+```
+
+This works because `createStoredZip()` always writes method=0 (stored) entries with no compression and no data descriptor. The local header layout is fixed:
+- Bytes 0-3: signature 0x04034b50
+- Bytes 8-9: compression method (must be 0)
+- Bytes 18-21: compressed size (== uncompressed size for stored)
+- Bytes 26-27: filename length
+- Bytes 28-29: extra field length
+- Data starts at offset 30 + filenameLen + extraLen
+
+Unit tests for `extractStoredZip`:
+- Round-trip: `createStoredZip → extractStoredZip` recovers original content
+- Rejects ZIP with compressed entries (method != 0)
+- Validates path safety (rejects `../` traversal)
+- Handles empty ZIP (no entries)
+- Handles single-file ZIP
+- Handles multi-file ZIP with subdirectories
+
+### Error Handling
+
+Foundry REST API errors:
+- **Non-2xx response**: parse error JSON `{ error: { code, message } }`, display to user
+- **401/403**: "Azure credentials expired. Run: az login"
+- **424 session_not_ready**: "Session is starting up, retrying..." (auto-retry up to 3 times with 5s delay)
+- **Timeout**: 5 minute timeout per response; "Generation timed out. Try a simpler request."
+- **`status: "failed"`**: display error details from response body
+
+### REPL Special Commands
+
+- `/quit` or `/exit` — exit REPL, stop preview server
+- `/open` — re-open browser to preview URL
+- `/session` — show current session ID, agent name, endpoint
+- `/export [dir]` — copy extracted app files (not ZIP) to specified directory (default: `./output`). Creates dir if needed, overwrites existing files.
+- `/help` — show all commands
+
+```text
+$ web-app-gen
+
+🔧 Authenticating...
+✓ GitHub: jietong (Copilot entitled)
+✓ Azure: ttthree@hotmail.com
+✓ Session: abc123 (new)
+✓ Preview: http://localhost:3001
+
+web-app-gen> build a pomodoro timer
+⏳ Generating...
+✓ Generated app (3 files, 4.2 KB)
+✓ Preview updated — check your browser
+
+web-app-gen> make the timer circular with a progress ring
+⏳ Generating...
+✓ Generated app (3 files, 5.1 KB)
+✓ Preview updated — check your browser
+
+web-app-gen> /quit
+```
+
+### Live Preview Server
+
+A minimal HTTP server on `localhost:3001` (configurable) that:
+
+1. Serves extracted app files (index.html, CSS, JS, assets) from a temp directory
+2. Injects a tiny auto-refresh script into HTML responses
+3. Tracks a version counter that increments when files are updated
+4. The injected script polls `/__version` every 500ms; reloads on change
+5. Browser opens once on first successful generation; subsequent turns just refresh
+
+```ts
+// Injected before </body>
+<script>
+(function(){
+  let v = 0;
+  setInterval(async () => {
+    try {
+      const r = await fetch('/__version');
+      const nv = +(await r.text());
+      if (v && nv !== v) location.reload();
+      v = nv;
+    } catch {}
+  }, 500);
+})();
+</script>
+```
+
+### CLI File Structure
+
+```text
+cli/src/
+  index.ts              — entry point, command routing
+  repl.ts               — REPL chat loop
+  foundry-client.ts     — direct Foundry REST API client
+  github-identity.ts    — GitHub user identity from token
+  preview-server.ts     — local HTTP preview with auto-refresh
+  download.ts           — download + validate ZIP (existing)
+  foundry-sessions.ts   — re-exports (existing)
+  validate-static-app.ts — re-exports (existing)
+```
 
 `output/manifest.json` schema:
 
@@ -311,8 +612,12 @@ cli/
   tsconfig.json
   src/
     index.ts
-    foundry-sessions.ts
+    repl.ts
+    foundry-client.ts
+    github-identity.ts
+    preview-server.ts
     download.ts
+    foundry-sessions.ts
     validate-static-app.ts
 
 control-plane/
@@ -363,6 +668,18 @@ infra/
 - GitHub OAuth module validates callback errors and missing token responses.
 - Session metadata module validates required Foundry session fields.
 - Static app validator detects missing assets and forbidden backend dependencies.
+- `foundry-client.ts`: correct URL construction, headers (`Foundry-Features`, `Authorization`), request body shape, Azure token parsing from `az` output, error handling for non-2xx responses.
+- `github-identity.ts`: parses GitHub user response, returns `{ login, id }`, handles API errors and missing token.
+- `preview-server.ts`: injects auto-refresh script into HTML, serves correct MIME types, `/__version` returns incrementing counter, `Cache-Control: no-store` headers.
+- `agent/src/server.ts`: body-token precedence (body > env vars), token not logged/persisted, missing token returns 401.
+- `package-output.ts`: always repackages (deletes stale ZIP), handles missing `index.html` error.
+- `extractStoredZip`: round-trip with `createStoredZip`, rejects compressed entries (method != 0), validates path safety, handles empty/single/multi-file ZIPs.
+
+### REPL Tests
+
+- Mock stdin/stdout to test `/help`, `/session`, `/open`, `/export`, `/quit` commands.
+- Multi-turn prompt flow: send two prompts, verify both invoke Foundry and trigger preview update.
+- Unknown command shows help.
 
 ### Integration Tests
 
@@ -370,6 +687,7 @@ infra/
 - Agent runner creates a session with `skillDirectories` pointing at the parent skills directory.
 - Skill packaging test asserts `agent/skills/web-app-builder/SKILL.md` exists.
 - CLI download flow handles a mocked Foundry session file response and unpacks `app.zip`.
+- Local fake Foundry HTTP server: create session → invoke responses → download file → verify ZIP.
 
 ### E2E Tests
 
@@ -381,6 +699,8 @@ infra/
   - Unzip each app.
   - Open `index.html` with Playwright.
   - Fail on missing assets, console errors, or network calls to unsupported backend endpoints.
+- Two different GitHub user IDs proving session isolation (different isolation keys → different sessions).
+- Second-turn regeneration proving preview/ZIP refresh (modify existing app, verify ZIP reflects changes).
 
 ### Error Path Tests
 

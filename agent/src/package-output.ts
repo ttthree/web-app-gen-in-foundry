@@ -1,4 +1,4 @@
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createStoredZip, sha256, validateZipBuffer, type ZipFileInput } from "@web-app-gen/contracts";
 
@@ -10,21 +10,14 @@ export type PackageOutputInput = {
 /**
  * Reads generated app files from output/app/, builds manifest.json,
  * and packages everything into a valid output/app.zip.
- * If a valid ZIP already exists, skips re-packaging.
+ * Always recreates app.zip so output never goes stale across turns.
  */
 export async function ensureValidAppZip(input: PackageOutputInput) {
   const outputDir = path.join(input.workspacePath, "output");
   const appDir = path.join(outputDir, "app");
   const zipPath = path.join(outputDir, "app.zip");
 
-  // If a valid ZIP already exists, just return it
-  const existingZip = await readFile(zipPath).catch(() => undefined);
-  if (existingZip) {
-    const existingValidation = validateZipBuffer(existingZip);
-    if (existingValidation.ok) {
-      return { zipPath, manifest: await buildManifest(input.prompt, appDir) };
-    }
-  }
+  await rm(zipPath, { force: true });
 
   const appFiles = await readAppFiles(appDir);
   if (!appFiles.some((file) => file.path === "index.html")) {

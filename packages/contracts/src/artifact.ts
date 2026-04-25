@@ -20,6 +20,11 @@ export type ZipEntry = {
   uncompressedSize: number;
 };
 
+export type ExtractedFile = {
+  path: string;
+  contents: Uint8Array;
+};
+
 export type ValidationResult = {
   ok: boolean;
   errors: string[];
@@ -151,6 +156,49 @@ export function readZipEntries(zip: Uint8Array): ZipEntry[] {
   }
 
   return entries;
+}
+
+export function extractStoredZip(zip: Uint8Array): ExtractedFile[] {
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  const files: ExtractedFile[] = [];
+  let offset = 0;
+
+  while (offset + 4 <= zip.byteLength) {
+    const signature = view.getUint32(offset, true);
+    if (signature === 0x02014b50 || signature === 0x06054b50) break;
+    if (signature !== 0x04034b50) throw new Error("invalid ZIP: bad local file header");
+    if (offset + 30 > zip.byteLength) throw new Error("invalid ZIP: local header out of range");
+
+    const flags = view.getUint16(offset + 6, true);
+    const method = view.getUint16(offset + 8, true);
+    const compressedSize = view.getUint32(offset + 18, true);
+    const uncompressedSize = view.getUint32(offset + 22, true);
+    const nameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+
+    if (flags & 0x08) throw new Error("unsupported ZIP: data descriptors are not supported");
+    if (method !== 0) throw new Error(`unsupported ZIP compression method: ${method}`);
+    if (compressedSize !== uncompressedSize) throw new Error("invalid ZIP: stored entry size mismatch");
+
+    const nameStart = offset + 30;
+    const nameEnd = nameStart + nameLength;
+    const dataStart = nameEnd + extraLength;
+    const dataEnd = dataStart + compressedSize;
+    if (nameEnd > zip.byteLength || dataStart > zip.byteLength || dataEnd > zip.byteLength) {
+      throw new Error("invalid ZIP: local entry out of range");
+    }
+
+    const entryPath = normalizeZipPath(new TextDecoder().decode(zip.subarray(nameStart, nameEnd)));
+    if (entryPath.endsWith("/")) {
+      offset = dataEnd;
+      continue;
+    }
+    if (!isSafeRelativePath(entryPath)) throw new Error(`unsafe ZIP path: ${entryPath}`);
+    files.push({ path: entryPath, contents: zip.slice(dataStart, dataEnd) });
+    offset = dataEnd;
+  }
+
+  return files;
 }
 
 export type ZipFileInput = {

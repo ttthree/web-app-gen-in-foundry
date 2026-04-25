@@ -8,7 +8,7 @@ import { downloadAndValidateAppZip } from "./download.js";
 describe("CLI download flow", () => {
   it("downloads output/app.zip through FoundrySessionsClient and validates it", async () => {
     const foundry = new InMemoryFoundrySessionsClient();
-    const session = await foundry.createOrResumeSession({ productUserId: "user-1", isolationKey: "iso-1" });
+    const session = await foundry.createSession({ agentName: "web-app-builder-agent", isolationKey: "iso-1" });
     const zip = makeCentralDirectoryOnlyZip(["index.html", "manifest.json"]);
     foundry.putSessionFile(session, "output/app.zip", zip);
     const outDir = await mkdtemp(path.join(tmpdir(), "web-app-gen-"));

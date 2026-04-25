@@ -3,7 +3,6 @@ import { mkdir, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { buildGenerationPrompt, runCopilotWebAppGeneration } from "./copilot-runner.js";
-import { readFile } from "node:fs/promises";
 import { validateZipBuffer } from "@web-app-gen/contracts";
 import { ensureValidAppZip } from "./package-output.js";
 
@@ -59,7 +58,7 @@ async function handleResponses(request: IncomingMessage, response: ServerRespons
   }
 
   await mkdir(workspacePath, { recursive: true });
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? process.env.COPILOT_GITHUB_TOKEN;
+  const token = resolveGitHubToken(body, process.env);
   if (!token) {
     sendJson(response, 401, {
       error: "missing_copilot_auth",
@@ -94,6 +93,16 @@ async function handleResponses(request: IncomingMessage, response: ServerRespons
     ],
     output_text: "Generated static app at output/app.zip",
   });
+}
+
+export function extractGitHubToken(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const token = (value as Record<string, unknown>).github_token;
+  return typeof token === "string" && token.trim() ? token : undefined;
+}
+
+export function resolveGitHubToken(value: unknown, env: Record<string, string | undefined>): string | undefined {
+  return extractGitHubToken(value) ?? env.COPILOT_GITHUB_TOKEN ?? env.GITHUB_TOKEN ?? env.GH_TOKEN;
 }
 
 async function handleFileDownload(request: IncomingMessage, response: ServerResponse, workspacePath: string): Promise<void> {

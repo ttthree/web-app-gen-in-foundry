@@ -32,10 +32,7 @@ export class ProductSessionManager {
 
   async createOrResume(input: { productUserId: string; githubUserId: string; isolationKey: string }): Promise<ProductSession> {
     await this.options.tokens.refreshIfNeeded({ productUserId: input.productUserId });
-    const foundrySession = await this.options.foundry.createOrResumeSession({
-      productUserId: input.productUserId,
-      isolationKey: input.isolationKey,
-    });
+    const foundrySession = await this.options.foundry.createSession({ agentName: "web-app-builder-agent", isolationKey: input.isolationKey });
 
     const existing = [...this.sessions.values()].find((session) => session.foundrySessionId === foundrySession.sessionId);
     if (existing) return existing;
@@ -48,14 +45,12 @@ export class ProductSessionManager {
 
   async generate(input: { productSessionId: string; prompt: string }): Promise<ProductSession> {
     const session = this.requireSession(input.productSessionId);
-    await this.options.tokens.getUserAccessToken({ productUserId: session.productUserId });
+    const token = await this.options.tokens.getUserAccessToken({ productUserId: session.productUserId });
     const response = await this.options.foundry.createResponse({
-      session: {
-        sessionId: session.foundrySessionId,
-        isolationKey: session.isolationKey,
-        agentName: session.agentName,
-      },
+      agentName: session.agentName,
+      sessionId: session.foundrySessionId,
       prompt: input.prompt,
+      githubToken: token.accessToken,
     });
 
     const updated: ProductSession = {

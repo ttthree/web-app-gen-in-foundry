@@ -56,10 +56,12 @@ export async function runCopilotWebAppGeneration(input: CopilotRunnerInput): Pro
 
 export function buildGenerationPrompt(userRequest: string): string {
   return [
-    "Use the web-app-builder skill to generate a frontend-only static web app.",
+    "Use the web-app-builder skill to generate or update a frontend-only static web app.",
     "",
     "Rules:",
-    "- Write all generated app files under output/app.",
+    "- Read existing files in output/app/ if present — modify them to fulfill the user request.",
+    "- If no files exist yet, create a new app from scratch.",
+    "- Write all app files under output/app.",
     "- The app must run by opening index.html directly in a browser.",
     "- Do not create output/app.zip — the server will package the files.",
     "- Do not create a backend, server process, database, auth provider, or cloud dependency.",
