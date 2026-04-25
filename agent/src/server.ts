@@ -13,12 +13,17 @@ export { buildGenerationPrompt, runCopilotWebAppGeneration } from "./copilot-run
 
 export function startServer(options: { port?: number; workspacePath?: string } = {}) {
   const port = options.port ?? Number(process.env.PORT ?? DEFAULT_PORT);
-  const workspacePath = options.workspacePath ?? process.env.WEB_APP_GEN_WORKSPACE ?? path.join(process.cwd(), ".session");
+  const workspacePath = options.workspacePath ?? process.env.WEB_APP_GEN_WORKSPACE ?? process.env.HOME ?? path.join(process.cwd(), ".session");
 
   const server = createServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/health") {
         sendJson(response, 200, { status: "ok" });
+        return;
+      }
+
+      if (request.method === "GET" && request.url === "/readiness") {
+        sendJson(response, 200, { status: "ready" });
         return;
       }
 
