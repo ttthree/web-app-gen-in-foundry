@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { mkdir, readFile, appendFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import type { FoundrySessionRef, FoundrySessionsClient } from "@web-app-gen/contracts";
 import { FoundryRestClient } from "./foundry-client.js";
@@ -43,8 +45,10 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   console.log(`✓ Session: ${session.sessionId}${options.sessionId ? " (resumed)" : ""}`);
   console.log(`✓ Preview: ${preview.url}`);
 
-  // If resuming a session, try to load existing app into preview
+  // If resuming a session, show history and try to load existing app into preview
   if (options.sessionId) {
+    const history = await loadHistory(session.sessionId);
+    printHistory(history);
     try {
       const files = await foundry.listSessionFiles({ agentName: session.agentName, sessionId: session.sessionId, path: "output/app" });
       const appFiles = files.filter((f) => !f.isDirectory);
@@ -78,6 +82,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         context.session = { sessionId: result.switchTo, isolationKey, agentName: config.agentName };
         session = context.session;
         console.log(`✓ Switched to session: ${session.sessionId}`);
+        // Show conversation history
+        const history = await loadHistory(session.sessionId);
+        printHistory(history);
         // Try to load existing app from the session into preview
         try {
           const files = await foundry.listSessionFiles({ agentName: session.agentName, sessionId: session.sessionId, path: "output/app" });
@@ -197,6 +204,12 @@ export async function runTurn(
   console.log(`${ts()} ✓ Generated app (${result.files.length} files, ${formatBytes(bytes)})`);
   if (options.openBrowser) await openBrowser(preview.url);
   console.log(`${ts()} ✓ Preview updated — check your browser`);
+
+  // Save conversation history locally
+  const now = new Date().toISOString();
+  await saveHistoryEntry(session.sessionId, { role: "user", text: prompt, timestamp: now }).catch(() => {});
+  const summary = `Generated app (${result.files.length} files, ${formatBytes(bytes)})`;
+  await saveHistoryEntry(session.sessionId, { role: "assistant", text: summary, timestamp: now }).catch(() => {});
 }
 
 export async function resolveConfig(options: Partial<CliConfig> = {}): Promise<CliConfig> {
@@ -329,6 +342,45 @@ async function openBrowser(url: string): Promise<void> {
 
 function formatBytes(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+// Local session history — stores prompts per session in ~/.web-app-gen/history/
+type HistoryEntry = { role: "user" | "assistant"; text: string; timestamp: string };
+
+function historyPath(sessionId: string): string {
+  return path.join(homedir(), ".web-app-gen", "history", `${sessionId}.jsonl`);
+}
+
+async function saveHistoryEntry(sessionId: string, entry: HistoryEntry): Promise<void> {
+  const filePath = historyPath(sessionId);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await appendFile(filePath, JSON.stringify(entry) + "\n");
+}
+
+async function loadHistory(sessionId: string): Promise<HistoryEntry[]> {
+  try {
+    const content = await readFile(historyPath(sessionId), "utf8");
+    return content.split("\n").filter(Boolean).map((line) => JSON.parse(line) as HistoryEntry);
+  } catch {
+    return [];
+  }
+}
+
+function printHistory(entries: HistoryEntry[]): void {
+  if (entries.length === 0) {
+    console.log("ℹ No conversation history for this session.");
+    return;
+  }
+  console.log("\n── Conversation History ──");
+  for (const entry of entries) {
+    const time = new Date(entry.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    if (entry.role === "user") {
+      console.log(`\x1b[2m${time}\x1b[0m \x1b[36myou>\x1b[0m ${entry.text}`);
+    } else {
+      console.log(`\x1b[2m${time}\x1b[0m \x1b[33mbot>\x1b[0m ${entry.text}`);
+    }
+  }
+  console.log("── End of History ──\n");
 }
 
 function exec(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
