@@ -646,30 +646,54 @@ Foundry Hosted Agent Container
           </div>
         </section>
 
-        <section class="section" id="try">
-          <p class="eyebrow">How to try it</p>
-          <h2>Local validation path</h2>
+        <section class="section" id="deploy">
+          <p class="eyebrow">Reference path</p>
+          <h2>Production deployment steps</h2>
           <p>
-            The repository includes a mock hosted-agent mode that exercises the same <code>/responses</code> shape and file
-            download contract without requiring a live Foundry deployment or a Copilot token.
+            The production path is doable, but it is more complicated than the product scenario deserves. A simple
+            artifact-producing agent currently requires resource planning, container infrastructure, identity wiring,
+            hosted-agent schema work, app-level token brokering, and custom artifact handling.
           </p>
-          <pre class="command">pnpm install
-pnpm typecheck
-pnpm test
-
-pnpm --filter @web-app-gen/agent build
-WEB_APP_GEN_MODE=mock WEB_APP_GEN_WORKSPACE=/tmp/web-app-gen-try PORT=8099 node agent/dist/server.js
-
-curl -fsS -X POST http://localhost:8099/responses \
-  -H 'content-type: application/json' \
-  -d '{"input":{"messages":[{"role":"user","content":"build a pomodoro timer"}]}}'
-curl -fsS 'http://localhost:8099/files?path=output/app.zip' -o app.zip
-unzip -l app.zip</pre>
+          <div class="steps">
+            <div class="step">
+              <span class="label">1 · Region</span>
+              <div><b>Create the Foundry project in a hosted-agents-supported region.</b><p>Verify region support before creating resources. In this project, the first resource had to be recreated after discovering hosted agents were only available in a specific region.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">2 · Image</span>
+              <div><b>Build the hosted-agent custom container.</b><p>Package the Node/TypeScript Responses server, <code>@github/copilot-sdk</code>, the Web App Builder skill directory, readiness/health endpoints, and output packaging logic into the image.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">3 · Registry</span>
+              <div><b>Push the image to Azure Container Registry and connect it to Foundry.</b><p>Create or reuse ACR, wire the Foundry project connection, and grant <code>AcrPull</code> to the project managed identity so hosted sessions can start the container.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">4 · Agent</span>
+              <div><b>Deploy the hosted-agent definition.</b><p>Keep <code>agent.yaml</code>, <code>azure.yaml</code>, and Bicep aligned with the current hosted-agent preview schema, including env vars, port mapping, readiness probe, and session configuration.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">5 · Auth</span>
+              <div><b>Wire product-user GitHub App OAuth.</b><p>Each user signs in through the GitHub App; the control plane refreshes and forwards a time-bounded user token to the hosted agent so Copilot SDK usage is attributed to the licensed user.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">6 · Invoke</span>
+              <div><b>Call the hosted session through Responses.</b><p>The CLI or product UI creates/resumes a Foundry hosted session, sends the generation prompt, streams progress, and relies on session workspace persistence for multi-turn edits.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">7 · Files</span>
+              <div><b>Package and download the generated app.</b><p>The agent writes <code>output/app/</code> and repackages <code>output/app.zip</code> on every turn. The CLI downloads via session files, with compression required to stay under the observed ~4 MiB download ceiling.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">8 · Ops</span>
+              <div><b>Add monitoring and failure diagnostics.</b><p>Use server logs, session IDs, explicit SSE keepalives, request IDs, and artifact-size checks because the default failure modes can look like stream termination, HTTP 500, or missing files.</p></div>
+            </div>
+          </div>
           <div class="callout">
-            <strong>Production caveat</strong>
+            <strong>Why this feels too complicated</strong>
             <p>
-              Cloud deployment still needs a hosted-agent-supported region, confirmed Foundry preview schema,
-              container registry wiring, and GitHub App OAuth token-broker integration for product users.
+              Most of these steps are infrastructure ceremony around a narrow product goal: run an agent for a while and
+              return a ZIP. A paved Foundry template should collapse region validation, ACR wiring, hosted-agent schema,
+              streaming keepalive, skills loading, and large-artifact return into one opinionated deployment path.
             </p>
           </div>
         </section>
@@ -698,7 +722,7 @@ unzip -l app.zip</pre>
         <a href="#architecture">Architecture</a>
         <a href="#struggles">Struggles</a>
         <a href="#asks">Foundry asks</a>
-        <a href="#try">Try it</a>
+        <a href="#deploy">Deployment</a>
         <a href="#bottom-line">Bottom line</a>
       </aside>
     </main>
