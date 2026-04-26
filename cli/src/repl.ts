@@ -86,6 +86,7 @@ export async function runTurn(
   const githubToken = await getFreshGitHubToken();
   let lastToolName = "";
   const clearLine = () => process.stdout.write("\x1b[2K\r");
+  const ts = () => `\x1b[2m${new Date().toLocaleTimeString()}\x1b[0m`;
 
   const response = await foundry.createResponseStreaming({
     agentName: session.agentName,
@@ -96,12 +97,12 @@ export async function runTurn(
       switch (event.type) {
         case "intent":
           clearLine();
-          process.stdout.write(`🤔 ${event.message}\n`);
+          process.stdout.write(`${ts()} 🤔 ${event.message}\n`);
           break;
         case "tool_start":
           clearLine();
           lastToolName = event.toolName ?? event.message;
-          process.stdout.write(`🔧 ${event.message}...`);
+          process.stdout.write(`${ts()} 🔧 ${event.message}...`);
           break;
         case "tool_complete":
           // Finish the current tool line
@@ -112,26 +113,26 @@ export async function runTurn(
           clearLine();
           if (lastToolName) process.stdout.write("\n"); // close open tool line
           lastToolName = "";
-          process.stdout.write(`⏳ ${event.message}\n`);
+          process.stdout.write(`${ts()} ⏳ ${event.message}\n`);
           break;
         case "error":
           clearLine();
           if (lastToolName) process.stdout.write("\n");
           lastToolName = "";
-          process.stdout.write(`✗ ${event.message}\n`);
+          process.stdout.write(`${ts()} ✗ ${event.message}\n`);
           break;
       }
     },
   });
   if (response.status !== "completed") throw new Error(response.outputText ?? `Generation did not complete: ${response.status}`);
   clearLine();
-  process.stdout.write("⬇ Downloading app...\n");
+  process.stdout.write(`${ts()} ⬇ Downloading app...\n`);
   const zip = await foundry.downloadSessionFile({ agentName: session.agentName, sessionId: session.sessionId, path: "output/app.zip" });
   const result = await preview.updateFromZip(zip);
   const bytes = result.files.reduce((sum, file) => sum + file.contents.byteLength, 0);
-  console.log(`✓ Generated app (${result.files.length} files, ${formatBytes(bytes)})`);
+  console.log(`${ts()} ✓ Generated app (${result.files.length} files, ${formatBytes(bytes)})`);
   if (options.openBrowser) await openBrowser(preview.url);
-  console.log("✓ Preview updated — check your browser");
+  console.log(`${ts()} ✓ Preview updated — check your browser`);
 }
 
 export async function resolveConfig(options: Partial<CliConfig> = {}): Promise<CliConfig> {
