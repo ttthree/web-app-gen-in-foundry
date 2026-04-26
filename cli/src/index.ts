@@ -86,14 +86,14 @@ async function runListSessions(flags: CliFlags = {}): Promise<void> {
     console.log("No sessions found.");
     return;
   }
-  console.log(`\n  ${"#".padEnd(4)} ${"Session ID".padEnd(50)} ${"Status".padEnd(10)} ${"Ver".padEnd(5)} ${"Last Accessed"}`);
-  console.log(`  ${"─".repeat(4)} ${"─".repeat(50)} ${"─".repeat(10)} ${"─".repeat(5)} ${"─".repeat(20)}`);
+  console.log(`\n  ${"#".padEnd(4)} ${"Session ID".padEnd(52)} ${"Status".padEnd(10)} ${"Ver".padEnd(5)} ${"Last Accessed"}`);
+  console.log(`  ${"─".repeat(4)} ${"─".repeat(52)} ${"─".repeat(10)} ${"─".repeat(5)} ${"─".repeat(20)}`);
   for (let i = 0; i < sessions.length; i++) {
     const s = sessions[i];
     const time = s.lastAccessedAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    console.log(`  ${String(i + 1).padEnd(4)} ${s.sessionId.padEnd(50)} ${s.status.padEnd(10)} v${s.agentVersion.padEnd(4)} ${time}`);
+    console.log(`  ${String(i + 1).padEnd(4)} ${s.sessionId.padEnd(52)} ${s.status.padEnd(10)} v${s.agentVersion.padEnd(4)} ${time}`);
   }
-  console.log(`\n${sessions.length} session(s). Resume with: web-app-gen --session <id>`);
+  console.log(`\n${sessions.length} session(s). Resume with: web-app-gen --session <session-id>`);
 }
 
 async function runGenerate(prompt: string, flags: { endpoint?: string; agentName?: string; previewPort?: number }): Promise<void> {

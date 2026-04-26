@@ -42,6 +42,23 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   console.log("✓ Azure: authenticated");
   console.log(`✓ Session: ${session.sessionId}${options.sessionId ? " (resumed)" : ""}`);
   console.log(`✓ Preview: ${preview.url}`);
+
+  // If resuming a session, try to load existing app into preview
+  if (options.sessionId) {
+    try {
+      const files = await foundry.listSessionFiles({ agentName: session.agentName, sessionId: session.sessionId, path: "output/app" });
+      const appFiles = files.filter((f) => !f.isDirectory);
+      if (appFiles.length > 0) {
+        const zip = await foundry.downloadSessionFile({ agentName: session.agentName, sessionId: session.sessionId, path: "output/app.zip" });
+        const loaded = await preview.updateFromZip(zip);
+        const bytes = loaded.files.reduce((sum, f) => sum + f.contents.byteLength, 0);
+        console.log(`✓ Loaded existing app (${loaded.files.length} files, ${formatBytes(bytes)})`);
+      }
+    } catch {
+      // No existing app — that's fine
+    }
+  }
+
   console.log("Type /help for commands.\n");
 
   const context = { session, preview, config, foundry };
@@ -61,6 +78,22 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         context.session = { sessionId: result.switchTo, isolationKey, agentName: config.agentName };
         session = context.session;
         console.log(`✓ Switched to session: ${session.sessionId}`);
+        // Try to load existing app from the session into preview
+        try {
+          const files = await foundry.listSessionFiles({ agentName: session.agentName, sessionId: session.sessionId, path: "output/app" });
+          const appFiles = files.filter((f) => !f.isDirectory);
+          if (appFiles.length > 0) {
+            const zip = await foundry.downloadSessionFile({ agentName: session.agentName, sessionId: session.sessionId, path: "output/app.zip" });
+            const loaded = await preview.updateFromZip(zip);
+            const bytes = loaded.files.reduce((sum, f) => sum + f.contents.byteLength, 0);
+            console.log(`✓ Loaded existing app (${loaded.files.length} files, ${formatBytes(bytes)})`);
+            console.log(`✓ Preview updated — check your browser`);
+          } else {
+            console.log("ℹ No app in this session yet.");
+          }
+        } catch {
+          console.log("ℹ No existing app to load from this session.");
+        }
         rl.prompt();
         continue;
       }
@@ -200,11 +233,25 @@ async function handleCommand(command: string, context: { session: FoundrySession
   }
   if (command === "/sessions" || command.startsWith("/sessions ")) {
     const arg = command.split(/\s+/)[1];
-    if (arg) {
-      return { switchTo: arg };
-    }
     try {
       const sessions = await context.foundry.listSessions({ agentName: context.config.agentName });
+      if (arg) {
+        // Switch by # or full session ID
+        const num = Number(arg);
+        let targetId: string;
+        if (Number.isInteger(num) && num >= 1 && num <= sessions.length) {
+          targetId = sessions[num - 1].sessionId;
+        } else {
+          // Match by prefix or full ID
+          const match = sessions.find((s) => s.sessionId === arg || s.sessionId.startsWith(arg));
+          if (!match) {
+            console.log(`✗ No session matching "${arg}". Use /sessions to list.`);
+            return false;
+          }
+          targetId = match.sessionId;
+        }
+        return { switchTo: targetId };
+      }
       if (sessions.length === 0) {
         console.log("No sessions found.");
       } else {
@@ -218,7 +265,7 @@ async function handleCommand(command: string, context: { session: FoundrySession
           const time = s.lastAccessedAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
           console.log(`${marker} ${String(i + 1).padEnd(4)} ${shortId.padEnd(16)} ${s.status.padEnd(10)} v${s.agentVersion.padEnd(4)} ${time}`);
         }
-        console.log(`\nUse /sessions <session-id> to switch. Current: ${current.slice(0, 12)}..`);
+        console.log(`\nSwitch: /sessions <#>  Current: ${current.slice(0, 12)}..`);
       }
     } catch (error) {
       console.error(`✗ Failed to list sessions: ${error instanceof Error ? error.message : String(error)}`);
