@@ -86,6 +86,11 @@ async function handleStreamingResponse(response: ServerResponse, workspacePath: 
     response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
+  // Send SSE keepalive every 15s to prevent proxy idle timeout
+  const heartbeat = setInterval(() => {
+    response.write(": keepalive\n\n");
+  }, 15_000);
+
   console.log(`[responses] streaming start prompt=${JSON.stringify(prompt.slice(0, 80))}`);
   sendEvent("progress", { type: "status", message: "Starting generation..." });
 
@@ -118,6 +123,7 @@ async function handleStreamingResponse(response: ServerResponse, workspacePath: 
       message,
     });
   } finally {
+    clearInterval(heartbeat);
     response.end();
   }
 }
