@@ -24,7 +24,8 @@ describe("REPL command routing", () => {
   it("prints help for /help", async () => {
     const logs = captureLogs();
     await expect(handleCommand("/help", context())).resolves.toBe(false);
-    expect(logs.output()).toContain("Commands: /quit, /exit, /open, /session, /export [dir], /help");
+    expect(logs.output()).toContain("/sessions");
+    expect(logs.output()).toContain("/help");
     logs.restore();
   });
 
@@ -55,7 +56,7 @@ describe("REPL command routing", () => {
     const logs = captureLogs();
     await expect(handleCommand("/wat", context())).resolves.toBe(false);
     expect(logs.output()).toContain("Unknown command: /wat");
-    expect(logs.output()).toContain("Commands: /quit");
+    expect(logs.output()).toContain("Commands: /sessions");
     logs.restore();
   });
 
@@ -112,6 +113,7 @@ function context(overrides: Partial<Parameters<typeof handleCommand>[1]> = {}): 
     session: { agentName: "agent", sessionId: "sid", isolationKey: "github:1" },
     preview: preview("/tmp/web-app-gen-preview-test"),
     config: { endpoint: "https://example.test/api/projects/proj", agentName: "agent", previewPort: 3001, apiVersion: "v1" },
+    foundry: fakeFoundry(),
     ...overrides,
   };
 }
@@ -143,6 +145,9 @@ function fakeFoundry(): FoundrySessionsClient & { requests: Array<{ prompt: stri
     requests,
     async createSession(input) {
       return { agentName: input.agentName, sessionId: "sid", isolationKey: input.isolationKey };
+    },
+    async listSessions() {
+      return [{ sessionId: "sid", status: "active", agentVersion: "1", createdAt: new Date(), lastAccessedAt: new Date() }];
     },
     async createResponse(input) {
       requests.push({ prompt: input.prompt, githubToken: input.githubToken, sessionId: input.sessionId });

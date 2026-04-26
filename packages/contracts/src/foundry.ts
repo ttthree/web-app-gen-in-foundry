@@ -4,6 +4,14 @@ export type FoundrySessionRef = {
   agentName: string;
 };
 
+export type FoundrySessionInfo = {
+  sessionId: string;
+  status: string;
+  agentVersion: string;
+  createdAt: Date;
+  lastAccessedAt: Date;
+};
+
 export type FoundrySessionFile = {
   name: string;
   size?: number;
@@ -18,6 +26,7 @@ export type FoundryProgressEvent = {
 
 export interface FoundrySessionsClient {
   createSession(input: { agentName: string; isolationKey: string }): Promise<FoundrySessionRef>;
+  listSessions(input: { agentName: string }): Promise<FoundrySessionInfo[]>;
   createResponse(input: { agentName: string; sessionId: string; prompt: string; githubToken: string }): Promise<{ responseId: string; status: string; outputText?: string }>;
   createResponseStreaming(input: { agentName: string; sessionId: string; prompt: string; githubToken: string; onProgress: (event: FoundryProgressEvent) => void }): Promise<{ responseId: string; status: string; outputText?: string }>;
   downloadSessionFile(input: { agentName: string; sessionId: string; path: string }): Promise<Uint8Array>;
@@ -43,6 +52,18 @@ export class InMemoryFoundrySessionsClient implements FoundrySessionsClient {
     };
     this.sessions.set(key, session);
     return session;
+  }
+
+  async listSessions(input: { agentName: string }): Promise<FoundrySessionInfo[]> {
+    return [...this.sessions.values()]
+      .filter((s) => s.agentName === (input.agentName || this.defaultAgentName))
+      .map((s) => ({
+        sessionId: s.sessionId,
+        status: "active",
+        agentVersion: "1",
+        createdAt: new Date(),
+        lastAccessedAt: new Date(),
+      }));
   }
 
   async createResponse(input: { agentName: string; sessionId: string; prompt: string; githubToken: string }): Promise<{ responseId: string; status: string; outputText?: string }> {

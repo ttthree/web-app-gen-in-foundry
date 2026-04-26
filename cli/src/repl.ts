@@ -17,6 +17,7 @@ export type CliConfig = {
 export type ReplOptions = Partial<CliConfig> & {
   foundry?: FoundrySessionsClient;
   openBrowser?: boolean;
+  sessionId?: string;
 };
 
 export async function startRepl(options: ReplOptions = {}): Promise<void> {
@@ -26,16 +27,24 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const identity = await getGitHubIdentity(initialToken);
   const isolationKey = `github:${identity.id}`;
   const foundry = options.foundry ?? new FoundryRestClient(config);
-  const session = await foundry.createSession({ agentName: config.agentName, isolationKey });
+
+  let session: FoundrySessionRef;
+  if (options.sessionId) {
+    session = { sessionId: options.sessionId, isolationKey, agentName: config.agentName };
+  } else {
+    session = await foundry.createSession({ agentName: config.agentName, isolationKey });
+  }
   const preview = await startPreviewServer(config.previewPort);
   let browserOpened = false;
 
   console.log("🔧 Authenticating...");
   console.log(`✓ GitHub: ${identity.login}`);
   console.log("✓ Azure: authenticated");
-  console.log(`✓ Session: ${session.sessionId}`);
+  console.log(`✓ Session: ${session.sessionId}${options.sessionId ? " (resumed)" : ""}`);
   console.log(`✓ Preview: ${preview.url}`);
   console.log("Type /help for commands.\n");
+
+  const context = { session, preview, config, foundry };
 
   const rl = createInterface({ input, output, prompt: "web-app-gen> " });
   try {
@@ -46,7 +55,15 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         rl.prompt();
         continue;
       }
-      if (await handleCommand(command, { session, preview, config })) break;
+      const result = await handleCommand(command, context);
+      if (result === true) break;
+      if (result && typeof result === "object" && "switchTo" in result) {
+        context.session = { sessionId: result.switchTo, isolationKey, agentName: config.agentName };
+        session = context.session;
+        console.log(`✓ Switched to session: ${session.sessionId}`);
+        rl.prompt();
+        continue;
+      }
       if (!command.startsWith("/")) {
         try {
           await runTurn(foundry, session, preview, command, { openBrowser: options.openBrowser !== false && !browserOpened });
@@ -167,7 +184,9 @@ export async function getFreshGitHubToken(): Promise<string> {
   return token;
 }
 
-async function handleCommand(command: string, context: { session: FoundrySessionRef; preview: PreviewServer; config: CliConfig }): Promise<boolean> {
+type CommandResult = boolean | { switchTo: string };
+
+async function handleCommand(command: string, context: { session: FoundrySessionRef; preview: PreviewServer; config: CliConfig; foundry: FoundrySessionsClient }): Promise<CommandResult> {
   if (command === "/quit" || command === "/exit") return true;
   if (command === "/help") {
     printReplHelp();
@@ -177,6 +196,33 @@ async function handleCommand(command: string, context: { session: FoundrySession
     console.log(`Session: ${context.session.sessionId}`);
     console.log(`Agent: ${context.session.agentName}`);
     console.log(`Endpoint: ${context.config.endpoint}`);
+    return false;
+  }
+  if (command === "/sessions" || command.startsWith("/sessions ")) {
+    const arg = command.split(/\s+/)[1];
+    if (arg) {
+      return { switchTo: arg };
+    }
+    try {
+      const sessions = await context.foundry.listSessions({ agentName: context.config.agentName });
+      if (sessions.length === 0) {
+        console.log("No sessions found.");
+      } else {
+        const current = context.session.sessionId;
+        console.log(`\n  ${"#".padEnd(4)} ${"Session ID".padEnd(16)} ${"Status".padEnd(10)} ${"Ver".padEnd(5)} ${"Last Accessed"}`);
+        console.log(`  ${"─".repeat(4)} ${"─".repeat(16)} ${"─".repeat(10)} ${"─".repeat(5)} ${"─".repeat(20)}`);
+        for (let i = 0; i < sessions.length; i++) {
+          const s = sessions[i];
+          const marker = s.sessionId === current ? "→" : " ";
+          const shortId = s.sessionId.length > 14 ? `${s.sessionId.slice(0, 12)}..` : s.sessionId;
+          const time = s.lastAccessedAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+          console.log(`${marker} ${String(i + 1).padEnd(4)} ${shortId.padEnd(16)} ${s.status.padEnd(10)} v${s.agentVersion.padEnd(4)} ${time}`);
+        }
+        console.log(`\nUse /sessions <session-id> to switch. Current: ${current.slice(0, 12)}..`);
+      }
+    } catch (error) {
+      console.error(`✗ Failed to list sessions: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return false;
   }
   if (command === "/open") {
@@ -200,7 +246,7 @@ async function handleCommand(command: string, context: { session: FoundrySession
 export { handleCommand };
 
 function printReplHelp(): void {
-  console.log("Commands: /quit, /exit, /open, /session, /export [dir], /help");
+  console.log("Commands: /sessions [id], /session, /open, /export [dir], /quit, /help");
 }
 
 async function validatePrerequisites(): Promise<void> {

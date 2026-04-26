@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import type { FoundrySessionRef, FoundrySessionsClient, FoundrySessionFile, FoundryProgressEvent } from "@web-app-gen/contracts";
+import type { FoundrySessionRef, FoundrySessionsClient, FoundrySessionFile, FoundrySessionInfo, FoundryProgressEvent } from "@web-app-gen/contracts";
 
 export type FoundryClientOptions = {
   endpoint: string;
@@ -36,6 +36,27 @@ export class FoundryRestClient implements FoundrySessionsClient {
     const sessionId = response.agent_session_id ?? response.id;
     if (!sessionId) throw new Error("Foundry create session response missing agent_session_id");
     return { sessionId, isolationKey: input.isolationKey, agentName: input.agentName };
+  }
+
+  async listSessions(input: { agentName: string }): Promise<FoundrySessionInfo[]> {
+    const response = await this.requestJson<{
+      data?: Array<{
+        agent_session_id: string;
+        status: string;
+        version_indicator?: { agent_version?: string };
+        created_at: number;
+        last_accessed_at: number;
+      }>;
+    }>("GET", this.agentPath(input.agentName, "endpoint/sessions"));
+    return (response.data ?? [])
+      .map((s) => ({
+        sessionId: s.agent_session_id,
+        status: s.status,
+        agentVersion: s.version_indicator?.agent_version ?? "?",
+        createdAt: new Date(s.created_at * 1000),
+        lastAccessedAt: new Date(s.last_accessed_at * 1000),
+      }))
+      .sort((a, b) => b.lastAccessedAt.getTime() - a.lastAccessedAt.getTime());
   }
 
   async createResponse(input: { agentName: string; sessionId: string; prompt: string; githubToken: string }): Promise<{ responseId: string; status: string; outputText?: string }> {
