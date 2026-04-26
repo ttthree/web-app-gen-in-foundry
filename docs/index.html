@@ -481,6 +481,7 @@
             <li><span class="pill">4</span><span><b>Container plumbing leaked into product work.</b> Dockerfile, ACR connection, Bicep, managed identity, and region availability dominated early implementation time.</span></li>
             <li><span class="pill">5</span><span><b>Observability was not default-on enough.</b> Server request logs and session filesystem state were hard to inspect until explicit monitor commands and custom logging were added.</span></li>
             <li><span class="pill">6</span><span><b>Skills and auth needed custom design.</b> The Web App Builder skill had to be vendored into the image, while GitHub App OAuth token forwarding had no ready template.</span></li>
+            <li><span class="pill">7</span><span><b>No server-side conversation history for hosted agents.</b> Verified 2026-04-26: <code>store=true</code>, <code>conversation_id</code>, and <code>previous_response_id</code> are silently ignored on the hosted-agent endpoint, and the project-level <code>/protocols/openai/responses</code> path returns 404 for hosted agents. Hosted-agent containers and managed conversation history are <i>mutually exclusive</i> surfaces in Foundry today — picking custom container means DIY history (we ship local JSONL).</span></li>
           </ul>
         </section>
 
@@ -521,6 +522,12 @@
                   <td>Vendored into the image and wired through Copilot SDK <code>skillDirectories</code>.</td>
                   <td>Native skills configuration on the agent.</td>
                   <td><span class="status-gap">More manual</span></td>
+                </tr>
+                <tr>
+                  <td>Conversation history</td>
+                  <td>Not available for hosted agents. <code>store</code>, <code>conversation_id</code>, and <code>previous_response_id</code> are silently ignored; project-level Responses returns 404. Workaround: client-side JSONL under <code>~/.web-app-gen/history/</code>.</td>
+                  <td>Durable append-only event log on every session; <code>messages.list(session_id)</code> returns full history.</td>
+                  <td><span class="status-gap">Direct gap</span></td>
                 </tr>
                 <tr>
                   <td>Container control</td>
@@ -617,6 +624,10 @@ Foundry Hosted Agent Container
               <span class="label">Artifacts</span>
               <div><b>A ~4 MiB session file download limit appeared late.</b><p>Large <code>output/app.zip</code> downloads failed around 4,194,292 bytes. Deflate compression mitigated the current app, but large generated assets will need a real large-file primitive.</p></div>
             </div>
+            <div class="step">
+              <span class="label">History</span>
+              <div><b>Hosted agents have no server-side conversation history.</b><p>A 30-minute spike confirmed it. <code>store=true</code>, <code>conversation_id</code>, and <code>previous_response_id</code> are silently ignored on the hosted-agent endpoint; the project-level Responses path returns 404 for hosted agents (it only routes to prompt agents). Foundry forces a choice: managed history (prompt agents, no container) or custom container (hosted agents, no history). We ship local JSONL under <code>~/.web-app-gen/history/</code> as the workaround — it works, but doesn't roam across machines.</p></div>
+            </div>
           </div>
         </section>
 
@@ -667,6 +678,11 @@ Foundry Hosted Agent Container
                   <td>Skills</td>
                   <td>Skill loading is image-specific and path-specific.</td>
                   <td>Add a native skill configuration field, or document the Copilot SDK skill-directory pattern explicitly.</td>
+                </tr>
+                <tr>
+                  <td>Conversation history for hosted agents</td>
+                  <td>No way to get server-side history for custom-container agents. <code>store</code>, <code>conversation_id</code>, and <code>previous_response_id</code> are silently ignored on the only endpoint that accepts hosted-agent traffic.</td>
+                  <td>Either route hosted-agent Responses through the same conversation store that prompt agents use, or document clearly that history is application-owned for hosted agents and ship a sample.</td>
                 </tr>
               </tbody>
             </table>
