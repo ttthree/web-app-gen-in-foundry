@@ -106,7 +106,8 @@ export class FoundryRestClient implements FoundrySessionsClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let currentEvent = "";
-    let result: { responseId: string; status: string; outputText?: string } = { responseId: "", status: "unknown" };
+    let result: { responseId: string; status: string; outputText?: string } | null = null;
+    let lastProgressMessage = "";
 
     const reader = body.getReader();
     try {
@@ -126,14 +127,16 @@ export class FoundryRestClient implements FoundrySessionsClient {
             try {
               const parsed = JSON.parse(data);
               if (currentEvent === "progress") {
-                onProgress(parsed as FoundryProgressEvent);
+                const event = parsed as FoundryProgressEvent;
+                lastProgressMessage = event.message;
+                onProgress(event);
               } else if (currentEvent === "done") {
                 result = { responseId: parsed.id ?? "", status: parsed.status ?? "completed", outputText: parsed.output_text };
               } else if (currentEvent === "error") {
                 throw new Error(parsed.message ?? "Generation failed");
               }
             } catch (parseError) {
-              if (parseError instanceof SyntaxError) continue; // skip malformed JSON
+              if (parseError instanceof SyntaxError) continue;
               throw parseError;
             }
           }
@@ -141,6 +144,10 @@ export class FoundryRestClient implements FoundrySessionsClient {
       }
     } finally {
       reader.releaseLock();
+    }
+
+    if (!result) {
+      throw new Error(`Agent stream ended unexpectedly (last: ${lastProgressMessage || "no events"}). The agent container may have crashed or timed out.`);
     }
 
     return result;

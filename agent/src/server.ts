@@ -86,6 +86,7 @@ async function handleStreamingResponse(response: ServerResponse, workspacePath: 
     response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
+  console.log(`[responses] streaming start prompt=${JSON.stringify(prompt.slice(0, 80))}`);
   sendEvent("progress", { type: "status", message: "Starting generation..." });
 
   try {
@@ -94,6 +95,7 @@ async function handleStreamingResponse(response: ServerResponse, workspacePath: 
       workingDirectory: workspacePath,
       prompt,
       onEvent: (event) => {
+        console.log(`[responses] event: ${event.type} ${event.message}`);
         sendEvent("progress", event);
       },
     });
@@ -101,15 +103,19 @@ async function handleStreamingResponse(response: ServerResponse, workspacePath: 
     sendEvent("progress", { type: "status", message: "Packaging output..." });
     await ensureValidAppZip({ workspacePath, prompt });
 
+    console.log("[responses] streaming done");
     sendEvent("done", {
       id: `resp_${Date.now()}`,
       status: "completed",
       output_text: "Generated static app at output/app.zip",
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[responses] streaming error: ${message}`);
+    if (error instanceof Error && error.stack) console.error(error.stack);
     sendEvent("error", {
       status: "failed",
-      message: error instanceof Error ? error.message : String(error),
+      message,
     });
   } finally {
     response.end();
