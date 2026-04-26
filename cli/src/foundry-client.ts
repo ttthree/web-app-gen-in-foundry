@@ -60,7 +60,7 @@ export class FoundryRestClient implements FoundrySessionsClient {
     const token = await this.azureTokenProvider();
     const url = this.url(this.agentPath(input.agentName, "endpoint/protocols/openai/responses"));
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+    const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
 
     try {
       const response = await this.fetchImpl(url, {
