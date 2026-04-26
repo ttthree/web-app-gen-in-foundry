@@ -344,7 +344,13 @@ function formatBytes(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-// Local session history — stores prompts per session in ~/.web-app-gen/history/
+// Local-only session history — Foundry hosted agents do NOT support server-side
+// conversation history through any current API path. Verified 2026-04-26:
+//   • Project-level /protocols/openai/responses → 404 for hosted agents (prompt-agents only).
+//   • Agent-scoped endpoint silently ignores store=true, conversation_id, previous_response_id.
+//   • Hosted-agent containers and managed conversation history are mutually exclusive in Foundry.
+// Workaround: persist turns as JSONL under ~/.web-app-gen/history/<session-id>.jsonl.
+// Caveat: does not roam across machines.
 type HistoryEntry = { role: "user" | "assistant"; text: string; timestamp: string };
 
 function historyPath(sessionId: string): string {
