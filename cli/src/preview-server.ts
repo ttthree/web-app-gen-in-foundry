@@ -3,7 +3,7 @@ import { mkdtemp, rm, stat, writeFile, mkdir, cp } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { extractStoredZip, type ExtractedFile } from "@web-app-gen/contracts";
+import { extractZip, type ExtractedFile } from "@web-app-gen/contracts";
 
 export type PreviewServer = {
   url: string;
@@ -71,7 +71,7 @@ export async function startPreviewServer(preferredPort = 3001): Promise<PreviewS
       return version;
     },
     async updateFromZip(zip: Uint8Array) {
-      const files = extractStoredZip(zip);
+      const files = extractZip(zip);
       await rm(rootDir, { recursive: true, force: true });
       await mkdir(rootDir, { recursive: true });
       for (const file of files) {

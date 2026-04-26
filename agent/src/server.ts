@@ -53,6 +53,7 @@ async function handleResponses(request: IncomingMessage, response: ServerRespons
   const body = await readJson(request);
   const prompt = extractPrompt(body);
   const stream = extractStream(body);
+
   if (!prompt) {
     sendJson(response, 400, { error: "missing_prompt" });
     return;

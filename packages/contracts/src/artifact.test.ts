@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createStoredZip, extractStoredZip, readZipEntries, sha256, validateManifest, validateZipBuffer, validateZipEntries } from "./artifact.js";
+import { createStoredZip, createZip, extractStoredZip, extractZip, readZipEntries, sha256, validateManifest, validateZipBuffer, validateZipEntries } from "./artifact.js";
 
 describe("artifact contract", () => {
   it("accepts a valid manifest", () => {
@@ -65,16 +65,48 @@ describe("artifact contract", () => {
     ]);
   });
 
-  it("rejects compressed entries", () => {
+  it("rejects unsupported compression methods", () => {
     const zip = createStoredZip([{ path: "index.html", contents: "hello" }]);
     const patched = zip.slice();
-    new DataView(patched.buffer).setUint16(8, 8, true);
-    expect(() => extractStoredZip(patched)).toThrow("unsupported ZIP compression method: 8");
+    new DataView(patched.buffer).setUint16(8, 5, true); // method 5 = unsupported
+    expect(() => extractZip(patched)).toThrow("unsupported ZIP compression method: 5");
   });
 
   it("rejects unsafe local header paths", () => {
     const zip = createUnsafeLocalZip("../secret.txt", "secret");
     expect(() => extractStoredZip(zip)).toThrow("unsafe ZIP path");
+  });
+
+  it("creates a compressed ZIP that validates and extracts correctly", () => {
+    const files = [
+      { path: "index.html", contents: "<main>Hello World!</main>".repeat(100) },
+      { path: "manifest.json", contents: "{}" },
+    ];
+    const zip = createZip(files);
+
+    expect(readZipEntries(zip).map((entry) => entry.path)).toEqual(["index.html", "manifest.json"]);
+    expect(validateZipBuffer(zip)).toEqual({ ok: true, errors: [] });
+
+    // Compressed ZIP should be smaller than stored for repetitive content
+    const storedZip = createStoredZip(files);
+    expect(zip.byteLength).toBeLessThan(storedZip.byteLength);
+
+    // Round-trip extraction
+    const extracted = extractZip(zip);
+    expect(extracted.map((file) => [file.path, new TextDecoder().decode(file.contents)])).toEqual([
+      ["index.html", "<main>Hello World!</main>".repeat(100)],
+      ["manifest.json", "{}"],
+    ]);
+  });
+
+  it("extractZip handles both stored and compressed entries", () => {
+    // Stored ZIP
+    const storedZip = createStoredZip([{ path: "a.txt", contents: "stored" }]);
+    expect(extractZip(storedZip).map((f) => new TextDecoder().decode(f.contents))).toEqual(["stored"]);
+
+    // Compressed ZIP
+    const compressedZip = createZip([{ path: "b.txt", contents: "compressed content ".repeat(50) }]);
+    expect(extractZip(compressedZip).map((f) => new TextDecoder().decode(f.contents))).toEqual(["compressed content ".repeat(50)]);
   });
 });
 

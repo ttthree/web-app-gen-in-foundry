@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 
 export const DEFAULT_MAX_ZIP_BYTES = 8 * 1024 * 1024;
 
@@ -159,6 +160,10 @@ export function readZipEntries(zip: Uint8Array): ZipEntry[] {
 }
 
 export function extractStoredZip(zip: Uint8Array): ExtractedFile[] {
+  return extractZip(zip);
+}
+
+export function extractZip(zip: Uint8Array): ExtractedFile[] {
   const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
   const files: ExtractedFile[] = [];
   let offset = 0;
@@ -177,8 +182,7 @@ export function extractStoredZip(zip: Uint8Array): ExtractedFile[] {
     const extraLength = view.getUint16(offset + 28, true);
 
     if (flags & 0x08) throw new Error("unsupported ZIP: data descriptors are not supported");
-    if (method !== 0) throw new Error(`unsupported ZIP compression method: ${method}`);
-    if (compressedSize !== uncompressedSize) throw new Error("invalid ZIP: stored entry size mismatch");
+    if (method !== 0 && method !== 8) throw new Error(`unsupported ZIP compression method: ${method}`);
 
     const nameStart = offset + 30;
     const nameEnd = nameStart + nameLength;
@@ -194,7 +198,14 @@ export function extractStoredZip(zip: Uint8Array): ExtractedFile[] {
       continue;
     }
     if (!isSafeRelativePath(entryPath)) throw new Error(`unsafe ZIP path: ${entryPath}`);
-    files.push({ path: entryPath, contents: zip.slice(dataStart, dataEnd) });
+
+    const rawData = zip.slice(dataStart, dataEnd);
+    const contents = method === 8 ? inflateRawSync(rawData) : rawData;
+    if (method === 0 && compressedSize !== uncompressedSize) {
+      throw new Error("invalid ZIP: stored entry size mismatch");
+    }
+
+    files.push({ path: entryPath, contents });
     offset = dataEnd;
   }
 
@@ -242,6 +253,75 @@ export function createStoredZip(files: ZipFileInput[]): Uint8Array {
     centralView.setUint32(16, crc, true);
     centralView.setUint32(20, contents.byteLength, true);
     centralView.setUint32(24, contents.byteLength, true);
+    centralView.setUint16(28, name.byteLength, true);
+    centralView.setUint32(42, localOffset, true);
+    centralHeader.set(name, 46);
+    centralParts.push(centralHeader);
+
+    localOffset += localHeader.byteLength;
+  }
+
+  const localSize = localParts.reduce((sum, part) => sum + part.byteLength, 0);
+  const centralSize = centralParts.reduce((sum, part) => sum + part.byteLength, 0);
+  const eocd = new Uint8Array(22);
+  const eocdView = new DataView(eocd.buffer);
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(8, files.length, true);
+  eocdView.setUint16(10, files.length, true);
+  eocdView.setUint32(12, centralSize, true);
+  eocdView.setUint32(16, localSize, true);
+
+  const zip = new Uint8Array(localSize + centralSize + eocd.byteLength);
+  let offset = 0;
+  for (const part of [...localParts, ...centralParts, eocd]) {
+    zip.set(part, offset);
+    offset += part.byteLength;
+  }
+  return zip;
+}
+
+export function createZip(files: ZipFileInput[]): Uint8Array {
+  const encoder = new TextEncoder();
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let localOffset = 0;
+
+  for (const file of files) {
+    const normalizedPath = normalizeZipPath(file.path);
+    if (!isSafeRelativePath(normalizedPath)) throw new Error(`unsafe ZIP path: ${file.path}`);
+
+    const name = encoder.encode(normalizedPath);
+    const uncompressed = typeof file.contents === "string" ? encoder.encode(file.contents) : file.contents;
+    const crc = crc32(uncompressed);
+    const compressed = deflateRawSync(uncompressed, { level: 6 });
+
+    // Use stored if deflate doesn't save space
+    const useDeflate = compressed.byteLength < uncompressed.byteLength;
+    const data = useDeflate ? compressed : uncompressed;
+    const method = useDeflate ? 8 : 0;
+
+    const localHeader = new Uint8Array(30 + name.byteLength + data.byteLength);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(8, method, true); // compression method
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, data.byteLength, true); // compressed size
+    localView.setUint32(22, uncompressed.byteLength, true); // uncompressed size
+    localView.setUint16(26, name.byteLength, true);
+    localHeader.set(name, 30);
+    localHeader.set(data, 30 + name.byteLength);
+    localParts.push(localHeader);
+
+    const centralHeader = new Uint8Array(46 + name.byteLength);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(10, method, true); // compression method
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, data.byteLength, true); // compressed size
+    centralView.setUint32(24, uncompressed.byteLength, true); // uncompressed size
     centralView.setUint16(28, name.byteLength, true);
     centralView.setUint32(42, localOffset, true);
     centralHeader.set(name, 46);

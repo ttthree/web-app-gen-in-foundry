@@ -1,6 +1,6 @@
 import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createStoredZip, sha256, validateZipBuffer, type ZipFileInput } from "@web-app-gen/contracts";
+import { createZip, sha256, validateZipBuffer, type ZipFileInput } from "@web-app-gen/contracts";
 
 export type PackageOutputInput = {
   workspacePath: string;
@@ -28,7 +28,7 @@ export async function ensureValidAppZip(input: PackageOutputInput) {
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
   await writeFile(path.join(outputDir, "manifest.json"), manifestText);
 
-  const zip = createStoredZip([...appFiles, { path: "manifest.json", contents: manifestText }]);
+  const zip = createZip([...appFiles, { path: "manifest.json", contents: manifestText }]);
   const validation = validateZipBuffer(zip);
   if (!validation.ok) throw new Error(`Packaged app ZIP failed validation: ${validation.errors.join("; ")}`);
 

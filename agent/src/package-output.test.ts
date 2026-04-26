@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { extractStoredZip } from "@web-app-gen/contracts";
+import { extractZip } from "@web-app-gen/contracts";
 import { ensureValidAppZip } from "./package-output.js";
 
 describe("ensureValidAppZip", () => {
@@ -18,7 +18,7 @@ describe("ensureValidAppZip", () => {
       await ensureValidAppZip({ workspacePath, prompt: "second" });
 
       const zip = await readFile(path.join(workspacePath, "output", "app.zip"));
-      const files = extractStoredZip(zip);
+      const files = extractZip(zip);
       const index = files.find((file) => file.path === "index.html");
       expect(new TextDecoder().decode(index?.contents)).toBe("<h1>second</h1>");
     } finally {
