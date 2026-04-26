@@ -1,11 +1,10 @@
-import { CopilotClient } from "@github/copilot-sdk";
+import { CopilotClient, approveAll } from "@github/copilot-sdk";
 import type { SessionEvent } from "@github/copilot-sdk";
-import { createGuardedPermissionHandler } from "./permission-guard.js";
 
 export const WEB_APP_BUILDER_AGENT_NAME = "web-app-builder-agent";
 
 export type ProgressEvent = {
-  type: "intent" | "tool_start" | "tool_complete" | "status" | "error";
+  type: "intent" | "tool_start" | "tool_complete" | "status" | "error" | "permission_denied" | "agent_message";
   message: string;
   toolName?: string;
 };
@@ -42,10 +41,7 @@ export function buildCopilotSessionConfig(input: Omit<CopilotRunnerInput, "promp
       },
     ],
     agent: WEB_APP_BUILDER_AGENT_NAME,
-    onPermissionRequest: createGuardedPermissionHandler({
-      workspacePath: input.workingDirectory,
-      skillsPath: skillsDirectory,
-    }),
+    onPermissionRequest: approveAll,
   };
 }
 
@@ -89,10 +85,18 @@ function mapEventToProgress(event: SessionEvent): ProgressEvent | null {
   switch (event.type) {
     case "assistant.intent":
       return { type: "intent", message: event.data.intent };
+    case "assistant.message":
+      return { type: "agent_message", message: event.data.content ?? "" };
     case "tool.execution_start":
       return { type: "tool_start", message: `Running ${event.data.toolName}`, toolName: event.data.toolName };
     case "tool.execution_complete":
       return { type: "tool_complete", message: `Done: ${event.data.toolCallId}`, toolName: event.data.toolCallId };
+    case "permission.completed": {
+      const kind = event.data.result?.kind ?? "";
+      if (kind.startsWith("denied"))
+        return { type: "permission_denied", message: `Permission denied: ${kind}` };
+      return null;
+    }
     case "session.error":
       return { type: "error", message: event.data.message };
     default:

@@ -11,7 +11,7 @@ export type FoundrySessionFile = {
 };
 
 export type FoundryProgressEvent = {
-  type: "intent" | "tool_start" | "tool_complete" | "status" | "error";
+  type: "intent" | "tool_start" | "tool_complete" | "status" | "error" | "permission_denied" | "agent_message";
   message: string;
   toolName?: string;
 };

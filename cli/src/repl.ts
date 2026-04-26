@@ -121,6 +121,20 @@ export async function runTurn(
           lastToolName = "";
           process.stdout.write(`${ts()} ✗ ${event.message}\n`);
           break;
+        case "permission_denied":
+          clearLine();
+          if (lastToolName) process.stdout.write("\n");
+          lastToolName = "";
+          process.stdout.write(`${ts()} 🚫 ${event.message}\n`);
+          break;
+        case "agent_message":
+          if (event.message) {
+            clearLine();
+            if (lastToolName) process.stdout.write("\n");
+            lastToolName = "";
+            process.stdout.write(`${ts()} 💬 ${event.message}\n`);
+          }
+          break;
       }
     },
   });

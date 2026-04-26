@@ -25,6 +25,7 @@ const sdkMock = vi.hoisted(() => {
 
 vi.mock("@github/copilot-sdk", () => ({
   CopilotClient: sdkMock.CopilotClient,
+  approveAll: async () => ({ kind: "approve-once" }),
 }));
 
 beforeEach(() => {
