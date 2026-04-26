@@ -4,6 +4,12 @@ TypeScript scaffold for a Microsoft Foundry hosted-session Responses web app gen
 
 The approved v1 design is in `design.md`; `PLAN.md` intentionally follows that document as the source of truth.
 
+## Field Report
+
+A shareable report on the Foundry hosted-agent developer experience is published from `docs/index.html` through GitHub Pages. After the Pages workflow runs on `main`, it is available at:
+
+https://ttthree.github.io/web-app-gen-in-foundry/
+
 ## Packages
 
 - `agent` — hosted-agent scaffold using `@github/copilot-sdk`, per-session `gitHubToken`, `skillDirectories`, a selected custom agent, and a guarded permission handler.

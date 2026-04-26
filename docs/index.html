@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Foundry Hosted Agents Field Report</title>
+    <meta
+      name="description"
+      content="A field report on building a frontend-only web app generator with Microsoft Foundry Hosted Agents and GitHub Copilot SDK."
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg-app: #fafafa;
+        --bg-panel: #ffffff;
+        --bg-panel-muted: #f4f4f5;
+        --bg-input: #f4f4f5;
+        --border: #e4e4e7;
+        --border-strong: #d4d4d8;
+        --text-primary: #09090b;
+        --text-secondary: #27272a;
+        --text-muted: #71717a;
+        --text-subtle: #a1a1aa;
+        --accent: #000000;
+        --accent-fg: #ffffff;
+        --blue: #2563eb;
+        --red: #dc2626;
+        --green: #15803d;
+        --amber: #b45309;
+        --radius-card: 0.5rem;
+        --font-body: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg-app);
+        color: var(--text-primary);
+        font-family: var(--font-body);
+        line-height: 1.55;
+      }
+
+      a {
+        color: inherit;
+        text-decoration-color: var(--border-strong);
+        text-underline-offset: 0.2em;
+      }
+
+      a:hover {
+        text-decoration-color: var(--text-primary);
+      }
+
+      code,
+      pre {
+        font-family: var(--font-mono);
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 15rem;
+        gap: 2rem;
+        margin: 0 auto;
+        max-width: 1220px;
+        padding: 3rem 1.25rem 5rem;
+      }
+
+      .page {
+        min-width: 0;
+      }
+
+      .toc {
+        align-self: start;
+        border-left: 1px solid var(--border);
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+        padding-left: 1rem;
+        position: sticky;
+        top: 2rem;
+      }
+
+      .toc strong {
+        color: var(--text-primary);
+        display: block;
+        font-size: 0.75rem;
+        letter-spacing: 0.1em;
+        margin-bottom: 0.75rem;
+        text-transform: uppercase;
+      }
+
+      .toc a {
+        display: block;
+        margin: 0.45rem 0;
+        text-decoration: none;
+      }
+
+      .hero {
+        border: 1px solid var(--border);
+        background:
+          linear-gradient(90deg, transparent 23px, var(--border) 24px, transparent 25px),
+          linear-gradient(transparent 23px, var(--border) 24px, transparent 25px),
+          var(--bg-panel);
+        background-size: 24px 24px;
+        border-radius: calc(var(--radius-card) * 1.5);
+        padding: 2rem;
+      }
+
+      .eyebrow {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        margin: 0 0 0.85rem;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.1;
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(2.35rem, 7vw, 5.6rem);
+        letter-spacing: -0.075em;
+        max-width: 11ch;
+      }
+
+      h2 {
+        font-size: clamp(1.6rem, 3vw, 2.55rem);
+        letter-spacing: -0.045em;
+      }
+
+      h3 {
+        font-size: 1.1rem;
+        letter-spacing: -0.02em;
+      }
+
+      .lede {
+        color: var(--text-secondary);
+        font-size: clamp(1.05rem, 2vw, 1.35rem);
+        margin: 1.5rem 0 0;
+        max-width: 45rem;
+      }
+
+      .hero-meta,
+      .summary-grid,
+      .cards,
+      .steps {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .hero-meta {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 2rem;
+      }
+
+      .metric,
+      .card,
+      .section,
+      .callout {
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+      }
+
+      .metric {
+        padding: 1rem;
+      }
+
+      .metric span,
+      .label {
+        color: var(--text-muted);
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .metric b {
+        display: block;
+        font-size: 1.35rem;
+        letter-spacing: -0.04em;
+        margin-top: 0.2rem;
+      }
+
+      section {
+        margin-top: 1.25rem;
+      }
+
+      .section {
+        padding: 1.5rem;
+      }
+
+      .section > p,
+      .card p,
+      .callout p {
+        color: var(--text-secondary);
+        margin: 0.75rem 0 0;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 1rem;
+      }
+
+      .issue-list {
+        display: grid;
+        gap: 0.75rem;
+        list-style: none;
+        margin: 1rem 0 0;
+        padding: 0;
+      }
+
+      .issue-list li {
+        align-items: flex-start;
+        background: var(--bg-panel-muted);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        display: grid;
+        gap: 0.1rem;
+        grid-template-columns: 1.7rem 1fr;
+        padding: 0.85rem;
+      }
+
+      .issue-list b {
+        display: block;
+      }
+
+      .issue-list span:last-child {
+        color: var(--text-secondary);
+      }
+
+      .pill {
+        align-items: center;
+        background: var(--accent);
+        border-radius: 999px;
+        color: var(--accent-fg);
+        display: inline-flex;
+        font-size: 0.75rem;
+        font-weight: 700;
+        height: 1.7rem;
+        justify-content: center;
+        width: 1.7rem;
+      }
+
+      .table-wrap {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        margin-top: 1rem;
+        overflow: auto;
+      }
+
+      table {
+        border-collapse: collapse;
+        font-size: 0.9rem;
+        min-width: 760px;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--border);
+        padding: 0.8rem 0.9rem;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--bg-panel-muted);
+        color: var(--text-secondary);
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      td:first-child {
+        font-weight: 700;
+      }
+
+      .status-good,
+      .status-risk,
+      .status-gap {
+        border-radius: 999px;
+        display: inline-block;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 0.15rem 0.5rem;
+      }
+
+      .status-good {
+        background: #dcfce7;
+        color: var(--green);
+      }
+
+      .status-risk {
+        background: #fef3c7;
+        color: var(--amber);
+      }
+
+      .status-gap {
+        background: #fee2e2;
+        color: var(--red);
+      }
+
+      .cards {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 1rem;
+      }
+
+      .card {
+        padding: 1rem;
+      }
+
+      .card .kicker {
+        color: var(--blue);
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+        margin-bottom: 0.6rem;
+      }
+
+      .callout {
+        border-color: var(--border-strong);
+        margin-top: 1rem;
+        padding: 1rem;
+      }
+
+      .callout strong {
+        display: block;
+      }
+
+      .diagram {
+        background: #09090b;
+        border-radius: var(--radius-card);
+        color: #fafafa;
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        line-height: 1.7;
+        margin-top: 1rem;
+        overflow-x: auto;
+        padding: 1rem;
+        white-space: pre;
+      }
+
+      .steps {
+        margin-top: 1rem;
+      }
+
+      .step {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 7rem 1fr;
+        padding: 1rem 0;
+      }
+
+      .step + .step {
+        border-top: 1px solid var(--border);
+      }
+
+      .step b {
+        color: var(--text-primary);
+      }
+
+      .step p {
+        color: var(--text-secondary);
+        margin: 0.15rem 0 0;
+      }
+
+      pre.command {
+        background: var(--bg-panel-muted);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        color: var(--text-primary);
+        font-size: 0.82rem;
+        line-height: 1.7;
+        margin: 1rem 0 0;
+        overflow-x: auto;
+        padding: 1rem;
+      }
+
+      .footnote {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        margin-top: 1rem;
+      }
+
+      @media (max-width: 960px) {
+        .shell {
+          display: block;
+        }
+
+        .toc {
+          display: none;
+        }
+
+        .hero-meta,
+        .summary-grid,
+        .cards {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 620px) {
+        .shell {
+          padding-top: 1rem;
+        }
+
+        .hero,
+        .section {
+          padding: 1rem;
+        }
+
+        .step {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <article class="page">
+        <header class="hero" id="top">
+          <p class="eyebrow">Field report · Microsoft Foundry Hosted Agents</p>
+          <h1>Building an artifact-producing agent was possible, but not smooth.</h1>
+          <p class="lede">
+            This project built a CLI-driven web app generator: the CLI sends a prompt to a Foundry hosted agent,
+            the agent runs GitHub Copilot SDK inside a custom container, generates a static frontend app, packages it,
+            and returns <code>output/app.zip</code> through hosted-session files.
+          </p>
+          <div class="hero-meta" aria-label="Project facts">
+            <div class="metric"><span>Runtime</span><b>Hosted Agent</b></div>
+            <div class="metric"><span>Agent Core</span><b>Copilot SDK</b></div>
+            <div class="metric"><span>Artifact</span><b>Static ZIP</b></div>
+            <div class="metric"><span>Main Risk</span><b>Hidden Limits</b></div>
+          </div>
+        </header>
+
+        <section class="section" id="issues">
+          <p class="eyebrow">Start here</p>
+          <h2>Concise issue list</h2>
+          <ul class="issue-list">
+            <li><span class="pill">1</span><span><b>Too many overlapping primitives.</b> Responses vs invocations, custom agents vs hosted agents, base64 ZIP vs session files all looked plausible for the same scenario.</span></li>
+            <li><span class="pill">2</span><span><b>Artifact return path has hidden ceilings.</b> SSE idle timeout, session file download size, and Responses payload size each forced a late workaround.</span></li>
+            <li><span class="pill">3</span><span><b>Region availability was easy to miss.</b> The first Foundry resource was created before discovering hosted agents were only available in a specific region, forcing resource recreation.</span></li>
+            <li><span class="pill">4</span><span><b>Container plumbing leaked into product work.</b> Dockerfile, ACR connection, Bicep, managed identity, and region availability dominated early implementation time.</span></li>
+            <li><span class="pill">5</span><span><b>Observability was not default-on enough.</b> Server request logs and session filesystem state were hard to inspect until explicit monitor commands and custom logging were added.</span></li>
+            <li><span class="pill">6</span><span><b>Skills and auth needed custom design.</b> The Web App Builder skill had to be vendored into the image, while GitHub App OAuth token forwarding had no ready template.</span></li>
+          </ul>
+        </section>
+
+        <section class="section" id="comparison">
+          <p class="eyebrow">Scenario comparison</p>
+          <h2>Foundry Hosted Agents vs Anthropic Managed Agents</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Concern</th>
+                  <th>Foundry path used here</th>
+                  <th>Anthropic Managed Agents fit</th>
+                  <th>Verdict</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Durable work state</td>
+                  <td>Hosted session VM and filesystem persist across turns, but state is implicit.</td>
+                  <td>Session event log and wake/resume model are first-class and queryable.</td>
+                  <td><span class="status-risk">Works, less explicit</span></td>
+                </tr>
+                <tr>
+                  <td>Streaming</td>
+                  <td>Raw SSE through proxy; required a 15s keepalive to survive long tool calls.</td>
+                  <td>Streaming is part of the managed agent abstraction.</td>
+                  <td><span class="status-gap">Foundry footgun</span></td>
+                </tr>
+                <tr>
+                  <td>Artifact download</td>
+                  <td>Agent writes <code>output/app.zip</code>; CLI downloads from session files; ~4 MiB ceiling was hit.</td>
+                  <td>Native Files API for generated artifacts.</td>
+                  <td><span class="status-gap">Direct gap</span></td>
+                </tr>
+                <tr>
+                  <td>Skills</td>
+                  <td>Vendored into the image and wired through Copilot SDK <code>skillDirectories</code>.</td>
+                  <td>Native skills configuration on the agent.</td>
+                  <td><span class="status-gap">More manual</span></td>
+                </tr>
+                <tr>
+                  <td>Container control</td>
+                  <td>Full custom container, arbitrary tools, enterprise Azure wiring.</td>
+                  <td>No custom runtime image to own.</td>
+                  <td><span class="status-good">Foundry advantage</span></td>
+                </tr>
+                <tr>
+                  <td>Enterprise fit</td>
+                  <td>Azure tenancy, managed identity, Key Vault, private networking are natural.</td>
+                  <td>Simpler platform surface, but less Azure-native control.</td>
+                  <td><span class="status-good">Foundry advantage</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" id="architecture">
+          <p class="eyebrow">What was built</p>
+          <h2>Project architecture</h2>
+          <p>
+            The generated web apps are frontend-only and do not call Foundry. Foundry is only the generator backend:
+            a hosted session receives the prompt, runs the Copilot SDK, writes files into the session sandbox, and
+            repackages the result for download.
+          </p>
+          <pre class="diagram">CLI / CI / Product UI
+  ├─ create or resume Foundry hosted session
+  ├─ send prompt through Responses
+  ├─ stream progress from hosted agent
+  └─ download output/app.zip from session files
+
+Control Plane
+  ├─ GitHub App OAuth for product users
+  ├─ token broker and session metadata
+  └─ Foundry adapter boundaries for tests
+
+Foundry Hosted Agent Container
+  ├─ Node/TypeScript Responses-compatible HTTP server
+  ├─ @github/copilot-sdk with per-user gitHubToken
+  ├─ vendored Web App Builder skill directory
+  ├─ output/app static files
+  └─ output/app.zip artifact package</pre>
+          <div class="cards">
+            <div class="card">
+              <div class="kicker">agent/</div>
+              <h3>Hosted runtime</h3>
+              <p>Responses handler, streaming, permission guard, Copilot SDK runner, output validation, and ZIP packaging.</p>
+            </div>
+            <div class="card">
+              <div class="kicker">cli/</div>
+              <h3>Generator client</h3>
+              <p>Foundry REST client, session commands, download flow, preview server, and static app validation.</p>
+            </div>
+            <div class="card">
+              <div class="kicker">control-plane/</div>
+              <h3>Product boundary</h3>
+              <p>GitHub OAuth, token storage abstraction, product session records, and Foundry handoff contracts.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="struggles">
+          <p class="eyebrow">Developer experience</p>
+          <h2>Where the team struggled</h2>
+          <div class="steps">
+            <div class="step">
+              <span class="label">Design</span>
+              <div><b>Choosing the right Foundry primitive took multiple rounds.</b><p>Agents repeatedly confused invocations with Responses and hosted agents with fully managed agents. The right answer became Responses + Hosted Sessions + session files, but that path was not obvious up front.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">Deploy</span>
+              <div><b>Hosted-agent region support was discovered too late.</b><p>A Foundry resource was created first, then recreated in the hosted-agents-supported region after learning the feature was region-limited. This is small friction, but it breaks the expected “create resource, then add agent” flow.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">Deploy</span>
+              <div><b>Custom container deployment required manual Azure glue.</b><p>ACR connection, AcrPull role assignment, preview region constraints, and <code>azd</code> path quirks had to be discovered and patched.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">Secrets</span>
+              <div><b>Token forwarding and secret refs were opaque.</b><p>GitHub App OAuth is the right product attribution model, but Foundry samples did not provide a direct user-token-to-hosted-agent pattern.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">Runtime</span>
+              <div><b>SSE idle timeout broke long tool calls.</b><p>The CLI saw terminated streams while the server kept working. A heartbeat fixed it, but the timeout was undocumented and surfaced as a transport failure.</p></div>
+            </div>
+            <div class="step">
+              <span class="label">Artifacts</span>
+              <div><b>A ~4 MiB session file download limit appeared late.</b><p>Large <code>output/app.zip</code> downloads failed around 4,194,292 bytes. Deflate compression mitigated the current app, but large generated assets will need a real large-file primitive.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="asks">
+          <p class="eyebrow">Concrete asks</p>
+          <h2>What Foundry could improve</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Gap</th>
+                  <th>Developer-visible symptom</th>
+                  <th>Suggested fix</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Artifact-producing guidance</td>
+                  <td>Multiple valid-looking designs across Responses, invocations, base64, files, and URLs.</td>
+                  <td>Publish a decision guide: “Use Responses + Hosted Sessions + <code>/files</code> for artifact-producing agents.”</td>
+                </tr>
+                <tr>
+                  <td>SSE timeout</td>
+                  <td>Long tool calls terminate the stream with no clear app-level error.</td>
+                  <td>Own keepalive in the hosting adapter and document proxy idle behavior.</td>
+                </tr>
+                <tr>
+                  <td>File download limit</td>
+                  <td>Downloads fail or truncate near 4 MiB.</td>
+                  <td>Return HTTP 413 with a clear message, raise the limit, or provide chunked/pre-signed downloads.</td>
+                </tr>
+                <tr>
+                  <td>Observability</td>
+                  <td>Request-handler issues require redeploying extra <code>console.log</code> statements.</td>
+                  <td>Make handler stdout/stderr, session files, and idle lifecycle visible in monitor output.</td>
+                </tr>
+                <tr>
+                  <td>Region availability</td>
+                  <td>Developer creates a Foundry resource, then learns hosted agents require a different region and must recreate it.</td>
+                  <td>Validate region support at resource creation time and surface hosted-agent availability in the portal, CLI, and templates.</td>
+                </tr>
+                <tr>
+                  <td>Container onboarding</td>
+                  <td>ACR, roles, Bicep, region support, and generated paths needed manual repair.</td>
+                  <td>Ship a working custom-container template that auto-wires registry access and validates region support.</td>
+                </tr>
+                <tr>
+                  <td>Skills</td>
+                  <td>Skill loading is image-specific and path-specific.</td>
+                  <td>Add a native skill configuration field, or document the Copilot SDK skill-directory pattern explicitly.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" id="try">
+          <p class="eyebrow">How to try it</p>
+          <h2>Local validation path</h2>
+          <p>
+            The repository includes a mock hosted-agent mode that exercises the same <code>/responses</code> shape and file
+            download contract without requiring a live Foundry deployment or a Copilot token.
+          </p>
+          <pre class="command">pnpm install
+pnpm typecheck
+pnpm test
+
+pnpm --filter @web-app-gen/agent build
+WEB_APP_GEN_MODE=mock WEB_APP_GEN_WORKSPACE=/tmp/web-app-gen-try PORT=8099 node agent/dist/server.js
+
+curl -fsS -X POST http://localhost:8099/responses \
+  -H 'content-type: application/json' \
+  -d '{"input":{"messages":[{"role":"user","content":"build a pomodoro timer"}]}}'
+curl -fsS 'http://localhost:8099/files?path=output/app.zip' -o app.zip
+unzip -l app.zip</pre>
+          <div class="callout">
+            <strong>Production caveat</strong>
+            <p>
+              Cloud deployment still needs a hosted-agent-supported region, confirmed Foundry preview schema,
+              container registry wiring, and GitHub App OAuth token-broker integration for product users.
+            </p>
+          </div>
+        </section>
+
+        <section class="section" id="bottom-line">
+          <p class="eyebrow">Bottom line</p>
+          <h2>Foundry is powerful; the artifact path needs productization.</h2>
+          <p>
+            Foundry is a strong fit when Azure control, custom containers, managed identity, and enterprise networking are
+            mandatory. For this specific “long-running agent produces a downloadable artifact” scenario, Anthropic Managed
+            Agents currently provide a more obvious happy path: fewer primitives, first-class files, native skills, and an
+            event stream that doubles as the operational log.
+          </p>
+          <p>
+            The Foundry ask is not more primitives. It is a paved road: opinionated docs, default keepalive, visible logs,
+            deploy-time validation, and a large-artifact return primitive.
+          </p>
+          <p class="footnote">Report generated from the implementation notes and task-session retrospective for <code>web-app-gen-in-foundry</code>.</p>
+        </section>
+      </article>
+
+      <aside class="toc" aria-label="Report navigation">
+        <strong>Contents</strong>
+        <a href="#issues">Issue list</a>
+        <a href="#comparison">Comparison</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#struggles">Struggles</a>
+        <a href="#asks">Foundry asks</a>
+        <a href="#try">Try it</a>
+        <a href="#bottom-line">Bottom line</a>
+      </aside>
+    </main>
+  </body>
+</html>
