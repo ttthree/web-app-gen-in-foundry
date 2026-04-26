@@ -6,7 +6,7 @@ The approved v1 design is in `design.md`; `PLAN.md` intentionally follows that d
 
 ## Field Report
 
-A shareable report on the Foundry hosted-agent developer experience is published from `docs/index.html` through GitHub Pages. After the Pages workflow runs on `main`, it is available at:
+A shareable report on the Foundry hosted-agent developer experience is maintained at `docs/index.html` and published through the `gh-pages` branch:
 
 https://ttthree.github.io/web-app-gen-in-foundry/
 
