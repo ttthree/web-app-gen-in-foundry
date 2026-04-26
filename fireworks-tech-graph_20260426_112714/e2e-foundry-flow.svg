@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" width="960" height="720" role="img" aria-labelledby="title desc">
+  <title id="title">End-to-end web app generator flow on Foundry Hosted Agents</title>
+  <desc id="desc">A sequence-style architecture diagram showing product user authentication, CLI invocation, Foundry hosted session, Copilot SDK generation, artifact packaging, session file download, and validation.</desc>
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 22px; font-weight: 700; fill: #111827; }
+    .subtitle { font-size: 13px; fill: #6b7280; }
+    .lane-title { font-size: 12px; font-weight: 700; fill: #374151; text-transform: uppercase; letter-spacing: .08em; }
+    .node-title { font-size: 15px; font-weight: 700; fill: #111827; }
+    .node-sub { font-size: 12px; fill: #6b7280; }
+    .small { font-size: 11px; fill: #6b7280; }
+    .code { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; fill: #374151; }
+  </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+    <marker id="arrow-warn" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#111827" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="720" fill="#ffffff"/>
+  <text x="40" y="48" class="title">E2E: prompt → hosted agent → static app ZIP</text>
+  <text x="40" y="70" class="subtitle">The generated app is frontend-only; Foundry is the generator backend and artifact transport.</text>
+
+  <rect x="36" y="100" width="888" height="86" rx="10" fill="#fafafa" stroke="#e4e4e7"/>
+  <text x="56" y="124" class="lane-title">Product setup and auth</text>
+  <rect x="62" y="140" width="150" height="34" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="82" y="162" class="node-sub">GitHub App OAuth</text>
+  <path d="M212 157 H282" stroke="#9333ea" stroke-width="2" fill="none" marker-end="url(#arrow-purple)"/>
+  <rect x="292" y="132" width="190" height="50" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
+  <text x="316" y="154" class="node-title">Token broker</text>
+  <text x="316" y="170" class="node-sub">refreshes user token</text>
+  <path d="M482 157 H552" stroke="#9333ea" stroke-width="2" fill="none" marker-end="url(#arrow-purple)"/>
+  <rect x="562" y="132" width="190" height="50" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
+  <text x="586" y="154" class="node-title">Copilot user token</text>
+  <text x="586" y="170" class="node-sub">time-bounded, per user</text>
+
+  <rect x="36" y="215" width="888" height="392" rx="14" fill="#ffffff" stroke="#d1d5db" filter="url(#shadow)"/>
+  <text x="56" y="242" class="lane-title">Generation and artifact flow</text>
+
+  <g transform="translate(58 274)">
+    <rect width="136" height="72" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+    <circle cx="28" cy="26" r="13" fill="#dbeafe" stroke="#bfdbfe"/>
+    <path d="M22 26 h12 M28 20 v12" stroke="#2563eb" stroke-width="2"/>
+    <text x="50" y="29" class="node-title">CLI / CI</text>
+    <text x="18" y="55" class="node-sub">prompt + session</text>
+  </g>
+
+  <g transform="translate(242 274)">
+    <rect width="150" height="72" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <text x="20" y="30" class="node-title">Foundry</text>
+    <text x="20" y="48" class="node-sub">Hosted Session</text>
+    <text x="20" y="63" class="code">agent_session_id</text>
+  </g>
+
+  <g transform="translate(440 250)">
+    <rect width="220" height="120" rx="12" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+    <text x="20" y="30" class="node-title">Custom agent container</text>
+    <text x="20" y="49" class="node-sub">Node Responses server</text>
+    <rect x="18" y="66" width="82" height="28" rx="7" fill="#dcfce7" stroke="#bbf7d0"/>
+    <text x="31" y="85" class="small">Copilot SDK</text>
+    <rect x="112" y="66" width="90" height="28" rx="7" fill="#fff7ed" stroke="#fed7aa"/>
+    <text x="124" y="85" class="small">Builder skill</text>
+  </g>
+
+  <g transform="translate(708 254)">
+    <rect width="152" height="112" rx="10" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+    <text x="20" y="30" class="node-title">Session $HOME</text>
+    <text x="20" y="53" class="code">output/app/</text>
+    <text x="20" y="72" class="code">index.html</text>
+    <text x="20" y="91" class="code">app.js + css</text>
+  </g>
+
+  <path d="M194 310 H232" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#arrow-blue)"/>
+  <text x="204" y="296" class="small">Responses</text>
+  <path d="M392 310 H430" stroke="#2563eb" stroke-width="2.5" fill="none" marker-end="url(#arrow-blue)"/>
+  <text x="397" y="296" class="small">stream</text>
+  <path d="M660 310 H698" stroke="#16a34a" stroke-width="2.5" fill="none" marker-end="url(#arrow-green)"/>
+  <text x="665" y="296" class="small">write files</text>
+
+  <g transform="translate(708 428)">
+    <rect width="152" height="76" rx="10" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5"/>
+    <text x="22" y="31" class="node-title">Package ZIP</text>
+    <text x="22" y="52" class="code">output/app.zip</text>
+  </g>
+  <path d="M784 366 V418" stroke="#16a34a" stroke-width="2.5" fill="none" marker-end="url(#arrow-green)"/>
+  <text x="794" y="398" class="small">deflate</text>
+
+  <g transform="translate(440 428)">
+    <rect width="220" height="76" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+    <text x="22" y="31" class="node-title">Session file API</text>
+    <text x="22" y="52" class="node-sub">download from hosted sandbox</text>
+  </g>
+  <path d="M708 466 H670" stroke="#16a34a" stroke-width="2.5" fill="none" marker-end="url(#arrow-green)"/>
+  <text x="672" y="452" class="small">file path</text>
+
+  <g transform="translate(58 428)">
+    <rect width="136" height="76" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+    <text x="20" y="31" class="node-title">Download</text>
+    <text x="20" y="52" class="node-sub">unzip + preview</text>
+  </g>
+  <path d="M440 466 H204" stroke="#16a34a" stroke-width="2.5" fill="none" marker-end="url(#arrow-green)"/>
+  <text x="288" y="452" class="small">app.zip</text>
+
+  <path d="M126 504 C126 554 286 568 412 542 C512 522 620 530 784 512" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 6" fill="none" marker-end="url(#arrow-warn)"/>
+  <text x="292" y="580" class="small">CI/browser checks catch broken HTML, missing assets, JS errors, and oversize artifacts</text>
+
+  <rect x="56" y="626" width="848" height="54" rx="10" fill="#fafafa" stroke="#e5e7eb"/>
+  <line x1="78" y1="646" x2="118" y2="646" stroke="#2563eb" stroke-width="2.5" marker-end="url(#arrow-blue)"/>
+  <text x="128" y="650" class="small">Prompt / control stream</text>
+  <line x1="286" y1="646" x2="326" y2="646" stroke="#16a34a" stroke-width="2.5" marker-end="url(#arrow-green)"/>
+  <text x="336" y="650" class="small">Generated files / artifact</text>
+  <line x1="536" y1="646" x2="576" y2="646" stroke="#9333ea" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <text x="586" y="650" class="small">User token path</text>
+  <line x1="738" y1="646" x2="778" y2="646" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow-warn)"/>
+  <text x="788" y="650" class="small">Validation / feedback</text>
+</svg>

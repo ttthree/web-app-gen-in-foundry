@@ -357,6 +357,27 @@
         white-space: pre;
       }
 
+      .diagram-figure {
+        background: var(--bg-panel-muted);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        margin: 1rem 0 0;
+        overflow: hidden;
+      }
+
+      .diagram-figure img {
+        display: block;
+        height: auto;
+        width: 100%;
+      }
+
+      .diagram-figure figcaption {
+        border-top: 1px solid var(--border);
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        padding: 0.75rem 1rem;
+      }
+
       .steps {
         margin-top: 1rem;
       }
@@ -543,6 +564,12 @@ Foundry Hosted Agent Container
   ├─ vendored Web App Builder skill directory
   ├─ output/app static files
   └─ output/app.zip artifact package</pre>
+          <figure class="diagram-figure">
+            <img src="/web-app-gen-in-foundry/fireworks-tech-graph_20260426_112714/e2e-foundry-flow.svg" alt="End-to-end flow from CLI prompt through Foundry hosted session, Copilot SDK generation, output packaging, session file download, and validation." loading="lazy" />
+            <figcaption>
+              End-to-end flow: the CLI sends prompts through Responses, the hosted agent runs Copilot SDK with the Web App Builder skill, writes <code>output/app/</code>, packages <code>output/app.zip</code>, and returns it through session files.
+            </figcaption>
+          </figure>
           <div class="cards">
             <div class="card">
               <div class="kicker">agent/</div>
